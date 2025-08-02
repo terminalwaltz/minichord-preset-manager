@@ -217,6 +217,7 @@ uploadPreset(bank, parameters) {
     console.error(`Error: Expected 256 parameters for bank ${bank}, got ${parameters?.length || 'undefined'}`);
     return false;
   }
+  console.log(`>> Building SysEx for bank ${bank}, parameter count: ${parameters.length}`);
   const sysex_message = new Uint8Array(516);
   sysex_message[0] = 0xF0; // SysEx start
   sysex_message[1] = 0;    // Address low
@@ -229,9 +230,19 @@ uploadPreset(bank, parameters) {
     sysex_message[5 + 2 * i + 1] = Math.floor(value / 128); // MSB
   }
   sysex_message[515] = 0xF7; // SysEx end
-  console.log(`>> Sending SysEx for bank ${bank}, length: ${sysex_message.length}, first 10 bytes:`, sysex_message.slice(0, 10));
-  this.device.send(sysex_message);
-  return true;
+  console.log(`>> SysEx message length: ${sysex_message.length}`);
+  console.log(`>> First 10 bytes:`, 
+              Array.from(sysex_message.slice(0, 10)).map(b => `0x${b.toString(16).padStart(2, '0')}`));
+  console.log(`>> Last 5 bytes:`, 
+              Array.from(sysex_message.slice(-5)).map(b => `0x${b.toString(16).padStart(2, '0')}`));
+  try {
+    this.device.send(sysex_message);
+    console.log(`>> SysEx sent successfully for bank ${bank}`);
+    return true;
+  } catch (error) {
+    console.error(`>> ERROR: Failed to send SysEx for bank ${bank}: ${error.message}`);
+    return false;
+  }
 }
 
 async uploadAllPresets(presets) {
