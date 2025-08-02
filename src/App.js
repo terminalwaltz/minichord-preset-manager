@@ -31,6 +31,7 @@ function PresetManager() {
 
   useEffect(() => {
     let isMounted = true;
+    console.log(">> Initializing MiniChordController");
     const ctrl = new MiniChordController();
     setController(ctrl);
     ctrl.onConnectionChange = (connected, message) => {
@@ -105,6 +106,12 @@ function PresetManager() {
             message: `Failed to fetch presets: ${error.message}`,
           });
         });
+      } else {
+        console.error("MIDI initialization failed: no device found");
+        setConnectionStatus({
+          connected: false,
+          message: "minichord not found",
+        });
       }
     }).catch((error) => {
       if (!isMounted) return;
@@ -168,7 +175,6 @@ function PresetManager() {
         };
       });
       if (controller && controller.isConnected()) {
-        // Upload only selected presets sequentially
         selected.forEach(async (index) => {
           const preset = {
             bankNumber: index,
@@ -209,7 +215,6 @@ function PresetManager() {
     setPresetState({ presets: newPresets });
     setDraggedIndex(null);
     if (controller && controller.isConnected()) {
-      // Upload all presets sequentially
       for (let i = 0; i < newPresets.length; i++) {
         const preset = {
           bankNumber: i,
@@ -224,109 +229,149 @@ function PresetManager() {
     }
   };
 
-  const handleFileUpload = async (event) => {
-    console.log(">> File upload triggered");
-    const file = event.target.files[0];
-    if (!file) {
-      console.log(">> No file selected");
+const handleFileUpload = async (event) => {
+  console.log(">> File upload triggered");
+  if (!controller || !controller.isConnected()) {
+    console.error("Error: Controller not initialized or not connected");
+    alert("No device connected");
+    return;
+  }
+  const fileInput = event.target;
+  const file = fileInput.files[0];
+  if (!file) {
+    console.error("Error: No file selected");
+    alert("No file selected");
+    return;
+  }
+  console.log(`>> Reading file: ${file.name}, size: ${file.size} bytes, type: ${file.type}`);
+  const reader = new FileReader();
+  reader.onload = async () => {
+    console.log(">> Starting reader.onload");
+    if (!reader.result) {
+      console.error("Error: FileReader result is undefined or empty");
+      alert("Failed to read file: No content");
       return;
     }
-    console.log(">> Reading file:", file.name);
-    const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const jsonData = JSON.parse(event.target.result);
-          if (!jsonData.presets || !Array.isArray(jsonData.presets) || jsonData.presets.length !== 12) {
-            console.error(`Error: JSON must contain a 'presets' array with exactly 12 entries, got ${jsonData.presets?.length || 0}`);
-            return;
-          }
+    try {
+      console.log(">> Parsing JSON");
+      const jsonData = JSON.parse(reader.result);
+      console.log(">> JSON parsed, preset count:", jsonData.presets?.length || 0);
 
-          for (let bank = 0; bank < jsonData.presets.length; bank++) {
-            const preset = jsonData.presets[bank];
-            if (!preset || typeof preset.value !== 'string') {
-              console.error(`Error: Preset ${bank} must have a Base64 'value' string, got ${typeof preset?.value}`);
-              continue;
-            }
+      if (!jsonData.presets || !Array.isArray(jsonData.presets)) {
+        console.error(`Error: JSON must contain a 'presets' array, got ${typeof jsonData.presets}`);
+        alert("Invalid JSON: Expected 'presets' array");
+        return;
+      }
+      console.log(">> Presets array validated, length:", jsonData.presets.length);
 
-            // Decode Base64 to semicolon-separated string
-            let numberString;
-            try {
-              numberString = atob(preset.value.replace(/[^A-Za-z0-9+/=]/g, '')); // Remove invalid chars
-            } catch (error) {
-              console.error(`Error: Failed to decode Base64 for preset ${bank}: ${error.message}`);
-              continue;
-            }
+      const validPresets = [];
+      const newPresetState = jsonData.presets.map((preset, index) => {
+        console.log(`>> Processing preset ${index}`);
+        let parameters = new Array(256).fill(0); // Default to zeros
+        let base64Value = preset?.value || "";
+        let presetName = preset?.name || `Preset ${index + 1}`;
+        let presetAuthor = preset?.author || "";
+        let presetDescription = preset?.description || "";
 
-            // Split into array of numbers
-            const parameters = numberString.split(';').map(num => parseInt(num, 10));
+        if (!base64Value || typeof base64Value !== 'string') {
+          console.warn(`Warning: Preset ${index} missing or invalid 'value' field, using default values`);
+        } else {
+          try {
+            console.log(`>> Raw Base64 for preset ${index}: ${base64Value.substring(0, 50)}...`);
+            const numberString = atob(base64Value.replace(/[^A-Za-z0-9+/=]/g, '')).replace(/;+$/, '');
+            console.log(`>> Decoded string length for preset ${index}: ${numberString.length}`);
+            parameters = numberString.split(';').map(num => {
+              const value = parseInt(num, 10);
+              return isNaN(value) || value < 0 || value > 16383 ? 0 : value;
+            });
+            console.log(`>> Parsed ${parameters.length} parameters for preset ${index}`);
             if (parameters.length !== 256) {
-              console.error(`Error: Preset ${bank} has ${parameters.length} parameters, expected 256`);
-              continue;
-            }
-
-            // Validate parameters
-            for (let i = 0; i < parameters.length; i++) {
-              if (isNaN(parameters[i]) || parameters[i] < 0 || parameters[i] > 16383) {
-                console.warn(`Preset ${bank}, parameter ${i} has invalid value ${parameters[i]}, setting to 0`);
-                parameters[i] = 0;
+              console.warn(`Warning: Preset ${index} has ${parameters.length} parameters, expected 256. Padding with zeros.`);
+              while (parameters.length < 256) {
+                parameters.push(0);
               }
             }
-
-            controller.uploadPreset(bank, parameters);
-            console.log(`>> Queued uploadPreset for bank ${bank}`);
-            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (error) {
+            console.error(`Error: Failed to decode Base64 for preset ${index}: ${error.message}`);
+            console.warn(`Warning: Using default values for preset ${index}`);
+            parameters = new Array(256).fill(0);
           }
-          console.log(">> Sent all presets sequentially");
-        } catch (error) {
-          console.error("Error reading preset file:", error);
         }
-      };  
-    reader.readAsText(file);
-  };
 
-  const validatePresetData = (data) => {
-    return (
-      data &&
-      data.presets &&
-      Array.isArray(data.presets) &&
-      data.presets.length === 12 &&
-      data.presets.every((preset) => {
-        try {
-          const values = atob(preset.value).split(";").map(Number);
-          return (
-            preset.name &&
-            typeof preset.name === "string" &&
-            typeof preset.author === "string" &&
-            typeof preset.description === "string" &&
-            values.length === 256 &&
-            values.every((v) => !isNaN(v) && v >= 0 && v <= 32767)
-          );
-        } catch (e) {
-          return false;
+        validPresets.push({
+          value: btoa(parameters.join(';')),
+          name: presetName,
+          author: presetAuthor,
+          description: presetDescription,
+        });
+        console.log(`>> Added preset ${index} to validPresets`);
+
+        return {
+          id: index,
+          title: presetName,
+          author: presetAuthor,
+          note: presetDescription,
+          values: parameters,
+        };
+      });
+
+      setPresetState({ presets: newPresetState });
+      console.log(">> Valid presets count:", validPresets.length);
+      if (validPresets.length === 0) {
+        console.error("Error: No valid presets to upload");
+        alert("No valid presets to upload");
+        return;
+      }
+
+      try {
+        console.log(">> Calling uploadAllPresets with", validPresets.length, "valid presets");
+        const success = await controller.uploadAllPresets(validPresets);
+        if (success) {
+          console.log(">> Finished uploadAllPresets");
+          alert("Presets uploaded successfully");
+        } else {
+          console.error("Error: uploadAllPresets failed");
+          alert("Failed to upload presets: Device not connected or invalid data");
         }
-      })
-    );
+      } catch (error) {
+        console.error(`Error: Failed to upload presets: ${error.message}`);
+        alert(`Error uploading presets: ${error.message}`);
+      }
+    } catch (error) {
+      console.error("Error in reader.onload:", error);
+      alert(`Error processing file: ${error.message}`);
+    }
   };
+  reader.onerror = () => {
+    console.error("Error reading file:", reader.error);
+    alert(`Error reading file: ${reader.error}`);
+  };
+  reader.readAsText(file);
+  fileInput.value = '';
+};
 
-  const handleSavePresets = () => {
-    const jsonData = {
-      presets: presetState.presets.map((preset) => ({
-        name: preset.title,
-        author: preset.author,
-        value: btoa(preset.values.join(";")),
-        description: preset.note,
-      })),
-    };
-    const dataStr = JSON.stringify(jsonData, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "minichord_presets.json";
-    a.click();
-    URL.revokeObjectURL(url);
-    localStorage.setItem("presets", dataStr);
+const handleSavePresets = () => {
+  console.log(">> Saving presets to JSON");
+  const jsonData = {
+    presets: presetState.presets.map(preset => ({
+      name: preset.title,
+      author: preset.author,
+      description: preset.note,
+      value: btoa(preset.values.join(';'))
+    }))
   };
+  const jsonString = JSON.stringify(jsonData, null, 2);
+  const blob = new Blob([jsonString], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'minichord_presets.json';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  console.log(">> Presets saved to file");
+};
 
   const handleResetMemory = () => {
     if (controller && controller.isConnected()) {

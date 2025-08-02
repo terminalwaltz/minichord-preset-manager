@@ -1,4 +1,3 @@
-// MiniChord Controller - Handles MIDI communication
 class MiniChordController {
   constructor() {
     this.device = false;
@@ -30,10 +29,12 @@ class MiniChordController {
       console.log(">> MIDI access granted");
       this.handleMIDIAccess(midiAccess);
       midiAccess.onstatechange = (event) => this.handleStateChange(event);
-      return true;
+      return this.device !== false;
     } catch (error) {
-      console.log(">> ERROR: MIDI access failed");
-      console.error(error);
+      console.error(">> ERROR: MIDI access failed:", error);
+      if (this.onConnectionChange) {
+        this.onConnectionChange(false, `MIDI access failed: ${error.message}`);
+      }
       return false;
     }
   }
@@ -48,7 +49,12 @@ class MiniChordController {
         );
         this.device = output;
         const sysex_message = [0xF0, 0, 0, 0, 0, 0xF7];
-        this.device.send(sysex_message);
+        try {
+          this.device.send(sysex_message);
+          console.log(">> Sent initial SysEx message");
+        } catch (error) {
+          console.error(">> ERROR: Failed to send initial SysEx:", error);
+        }
       } else {
         console.log(
           `>>>> Other port [type:'${output.type}'] id: '${output.id}' manufacturer: '${output.manufacturer}' name: '${output.name}' version: '${output.version}'`
@@ -83,8 +89,7 @@ class MiniChordController {
   }
 
   handleStateChange(event) {
-    console.log(">> MIDI state change received");
-    console.log(event);
+    console.log(">> MIDI state change received:", event.port.name, event.port.state);
     if (
       event.port.state === "disconnected" &&
       this.device !== false &&
@@ -169,7 +174,7 @@ class MiniChordController {
 
   sendParameter(address, value) {
     if (!this.device) {
-      console.log(">> ERROR: Cannot send parameter, no device connected");
+      console.error(">> ERROR: Cannot send parameter, no device connected");
       return false;
     }
     const first_byte = parseInt(value % 128);
@@ -177,109 +182,154 @@ class MiniChordController {
     const first_byte_address = parseInt(address % 128);
     const second_byte_address = parseInt(address / 128);
     const sysex_message = [0xF0, first_byte_address, second_byte_address, first_byte, second_byte, 0xF7];
-    this.device.send(sysex_message);
-    console.log(`>> Sent parameter: address=${address}, value=${value}`);
-    return true;
+    try {
+      this.device.send(sysex_message);
+      console.log(`>> Sent parameter: address=${address}, value=${value}`);
+      return true;
+    } catch (error) {
+      console.error(`>> ERROR: Failed to send parameter: ${error.message}`);
+      return false;
+    }
   }
 
   async fetchAllPresets() {
     if (!this.device) {
-      console.log(">> ERROR: Cannot fetch presets, no device connected");
+      console.error(">> ERROR: Cannot fetch presets, no device connected");
       return false;
     }
     const sysex_message = [0xF0, 0, 0, 4, 0, 0xF7];
-    this.device.send(sysex_message);
-    console.log(">> Sent fetchAllPresets command");
-    return true;
+    try {
+      this.device.send(sysex_message);
+      console.log(">> Sent fetchAllPresets command");
+      return true;
+    } catch (error) {
+      console.error(`>> ERROR: Failed to send fetchAllPresets: ${error.message}`);
+      return false;
+    }
   }
 
 uploadPreset(bank, parameters) {
+  if (!this.device) {
+    console.error(">> ERROR: Cannot send preset, no device connected");
+    return false;
+  }
   if (!Array.isArray(parameters) || parameters.length !== 256) {
-    console.error(`Error: Invalid parameters for bank ${bank}, expected 256 parameters, got ${parameters?.length || 'undefined'}`);
-    return;
+    console.error(`Error: Expected 256 parameters for bank ${bank}, got ${parameters?.length || 'undefined'}`);
+    return false;
   }
-  const sysexData = new Uint8Array(516);
-  sysexData[0] = 0xF0; // SysEx start
-  sysexData[1] = 0;    // Address low
-  sysexData[2] = 0;    // Address high
-  sysexData[3] = 2;    // Command 2
-  sysexData[4] = bank; // Bank number (0–11)
+  const sysex_message = new Uint8Array(516);
+  sysex_message[0] = 0xF0; // SysEx start
+  sysex_message[1] = 0;    // Address low
+  sysex_message[2] = 0;    // Address high
+  sysex_message[3] = 2;    // Command 2 (bulk upload)
+  sysex_message[4] = bank; // Bank number (0–11)
   for (let i = 0; i < 256; i++) {
-    const val = Math.max(0, Math.min(16383, Math.round(parameters[i] || 0)));
-    sysexData[5 + 2 * i] = val & 0x7F;       // LSB (7 bits)
-    sysexData[5 + 2 * i + 1] = (val >> 7) & 0x7F; // MSB (7 bits)
+    const value = Math.max(0, Math.min(16383, parameters[i] || 0)); // Clamp to 0–16383
+    sysex_message[5 + 2 * i] = value % 128;      // LSB
+    sysex_message[5 + 2 * i + 1] = Math.floor(value / 128); // MSB
   }
-  sysexData[515] = 0xF7; // SysEx end
-  this.device.send(sysexData);
-  console.log(`>> Sent uploadPreset command for bank ${bank} (${sysexData.length} bytes)`);
+  sysex_message[515] = 0xF7; // SysEx end
+  console.log(`>> Sending SysEx for bank ${bank}, length: ${sysex_message.length}, first 10 bytes:`, sysex_message.slice(0, 10));
+  this.device.send(sysex_message);
+  return true;
 }
 
 async uploadAllPresets(presets) {
-  if (!Array.isArray(presets) || presets.length !== 12) {
-    console.error(`Error: Expected 12 presets, got ${presets?.length || 'undefined'}`);
-    return;
+  if (!this.device) {
+    console.error(">> ERROR: Cannot send presets, no device connected");
+    return false;
   }
-  for (let bank = 0; bank < presets.length; bank++) {
+  if (!Array.isArray(presets) || presets.length === 0) {
+    console.error(`Error: Expected non-empty presets array, got ${presets?.length || 'undefined'}`);
+    return false;
+  }
+  console.log(">> Starting uploadAllPresets with", presets.length, "presets");
+  let success = true;
+  for (let bank = 0; bank < Math.min(this.preset_number, presets.length); bank++) {
     const preset = presets[bank];
-    if (!preset || typeof preset.value !== 'string') {
-      console.error(`Error: Preset ${bank} must have a Base64 'value' string`);
+    if (!preset || !preset.value || typeof preset.value !== 'string') {
+      console.warn(`>> Skipping preset ${bank}: Missing or invalid 'value' field`);
       continue;
     }
-    // Decode Base64 to semicolon-separated string
+    console.log(`>> Processing preset ${bank}`);
     let parameters;
     try {
-      const numberString = atob(preset.value.replace(/[^A-Za-z0-9+/=]/g, ''));
-      parameters = numberString.split(';').map(num => parseInt(num, 10));
+      const numberString = atob(preset.value.replace(/[^A-Za-z0-9+/=]/g, '')).replace(/;+$/, '');
+      console.log(`>> Decoded string length for preset ${bank}: ${numberString.length}`);
+      parameters = numberString.split(';').map(num => {
+        const value = parseInt(num, 10);
+        return isNaN(value) || value < 0 || value > 16383 ? 0 : value;
+      });
       if (parameters.length !== 256) {
-        console.error(`Error: Preset ${bank} has ${parameters.length} parameters, expected 256`);
-        continue;
-      }
-      for (let i = 0; i < parameters.length; i++) {
-        if (isNaN(parameters[i]) || parameters[i] < 0 || parameters[i] > 16383) {
-          parameters[i] = 0;
+        console.warn(`Warning: Preset ${bank} has ${parameters.length} parameters, expected 256. Padding with zeros.`);
+        while (parameters.length < 256) {
+          parameters.push(0);
         }
       }
+      const successUpload = await this.uploadPreset(bank, parameters);
+      if (!successUpload) {
+        console.error(`Error: Failed to upload preset ${bank}`);
+        success = false;
+      } else {
+        console.log(`>> Successfully uploaded preset ${bank}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, 100)); // Match firmware's delay(100)
     } catch (error) {
-      console.error(`Error: Failed to decode Base64 for preset ${bank}: ${error.message}`);
-      continue;
+      console.error(`Error: Failed to process preset ${bank}: ${error.message}`);
+      success = false;
     }
-    this.uploadPreset(bank, parameters);
-    await new Promise(resolve => setTimeout(resolve, 100));
   }
-  console.log(">> Sent all presets sequentially");
+  console.log(`>> uploadAllPresets completed, success: ${success}`);
+  return success;
 }
+
 
   resetMemory() {
     if (!this.device) {
-      console.log(">> ERROR: Cannot reset memory, no device connected");
+      console.error(">> ERROR: Cannot reset memory, no device connected");
       return false;
     }
     const sysex_message = [0xF0, 0, 0, 1, 0, 0xF7];
-    this.device.send(sysex_message);
-    console.log(">> Sent resetMemory command");
-    return true;
+    try {
+      this.device.send(sysex_message);
+      console.log(">> Sent resetMemory command");
+      return true;
+    } catch (error) {
+      console.error(`>> ERROR: Failed to send resetMemory: ${error.message}`);
+      return false;
+    }
   }
 
   saveCurrentSettings(bankNumber) {
     if (!this.device) {
-      console.log(">> ERROR: Cannot save settings, no device connected");
+      console.error(">> ERROR: Cannot save settings, no device connected");
       return false;
     }
     const sysex_message = [0xF0, 0, 0, 2, bankNumber, 0xF7];
-    this.device.send(sysex_message);
-    console.log(`>> Sent saveCurrentSettings command for bank ${bankNumber}`);
-    return true;
+    try {
+      this.device.send(sysex_message);
+      console.log(`>> Sent saveCurrentSettings command for bank ${bankNumber}`);
+      return true;
+    } catch (error) {
+      console.error(`>> ERROR: Failed to send saveCurrentSettings: ${error.message}`);
+      return false;
+    }
   }
 
   resetCurrentBank() {
     if (!this.device || this.active_bank_number === -1) {
-      console.log(">> ERROR: Cannot reset bank, no device connected or no active bank");
+      console.error(">> ERROR: Cannot reset bank, no device connected or no active bank");
       return false;
     }
     const sysex_message = [0xF0, 0, 0, 3, this.active_bank_number, 0xF7];
-    this.device.send(sysex_message);
-    console.log(`>> Sent resetCurrentBank command for bank ${this.active_bank_number}`);
-    return true;
+    try {
+      this.device.send(sysex_message);
+      console.log(`>> Sent resetCurrentBank command for bank ${this.active_bank_number}`);
+      return true;
+    } catch (error) {
+      console.error(`>> ERROR: Failed to send resetCurrentBank: ${error.message}`);
+      return false;
+    }
   }
 
   isConnected() {
