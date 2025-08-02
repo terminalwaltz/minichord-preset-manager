@@ -86,6 +86,11 @@
   gap: 10px;
 }
 
+.bulk-edit select {
+  padding: 5px;
+  width: 300px; /* Wider for longer parameter names */
+}
+
 .bulk-edit-note {
   font-size: 0.8em;
   color: #666;
