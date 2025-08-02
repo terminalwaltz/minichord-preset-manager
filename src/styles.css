@@ -129,18 +129,25 @@ body {
   opacity: 0.5;
 }
 
+/* Bulk Edit */
 .bulk-edit-container {
   display: flex;
-  align-items: baseline;
-  width: calc(100% - 220px); /* Take remaining space, accounting for button-container width and gap */
+  align-items: flex-start; /* Align to top to handle multiple rows */
+  width: calc(100% - 220px);
 }
 
 .bulk-edit {
   display: flex;
-  flex-flow: row wrap;
-  align-items: center;
+  flex-direction: column; /* Stack rows vertically */
   gap: 10px;
   width: 100%;
+}
+
+.bulk-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap; /* Allow wrapping for small screens */
 }
 
 .bulk-edit select {
@@ -166,11 +173,13 @@ body {
 .bulk-edit-note {
   font-size: 0.55em;
   color: #666;
-  margin-left: 10px;
-  flex: 1; /* Take remaining space */
+  margin-top: 10px;
+  flex: 1;
 }
 
-.bulk-edit button {
+.bulk-edit button,
+.bulk-edit .add-bulk-edit,
+.bulk-edit .remove-bulk-edit {
   background-color: white;
   border: 1px solid black;
   color: black;
@@ -179,14 +188,26 @@ body {
   font-size: 1em;
   padding: 0.5em;
   text-align: center;
+  width: 15%;
+}
+
+.bulk-edit .add-bulk-edit {
+  background-color: #e6f3ff; /* Light blue to distinguish */
+}
+
+.bulk-edit .remove-bulk-edit {
+  background-color: #ffe6e6; /* Light red to distinguish */
 }
 
 .bulk-edit button:hover,
-.bulk-edit button:focus {
+.bulk-edit .add-bulk-edit:hover,
+.bulk-edit .remove-bulk-edit:hover {
   opacity: 0.75;
 }
 
-.bulk-edit button:disabled {
+.bulk-edit button:disabled,
+.bulk-edit .add-bulk-edit:disabled,
+.bulk-edit .remove-bulk-edit:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -227,11 +248,15 @@ body {
 /* Responsive Adjustments */
 @media all and (max-width: 1200px) {
   .presets {
-    grid-template-columns: repeat(4, 1fr); /* Four columns for medium screens */
+    grid-template-columns: repeat(4, 1fr);
   }
 
   .bulk-edit select {
     width: 250px;
+  }
+
+  .bulk-edit input[type="number"] {
+    width: 80px;
   }
 }
 
@@ -261,7 +286,11 @@ body {
     width: 200px;
   }
 
+  .bulk-edit input[type="number"] {
+    width: 70px;
+  }
+
   .presets {
-    grid-template-columns: 1fr; /* Single column for small screens */
+    grid-template-columns: 1fr;
   }
 }

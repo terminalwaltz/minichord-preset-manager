@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import MiniChordController from "./minichordcontroller";
 import "./styles.css";
-import parametersData from './parameters.json'; // Import parameters.json
+import parametersData from './parameters.json';
 
 // Combine parameters, use parameters.json ranges
 const validParameters = [
@@ -33,7 +33,7 @@ const validParameters = [
     tooltip: param.tooltip
   }))
 ]
-  .filter(param => param.address >= 21 && param.address <= 219)
+  .filter(param => param.address >= 10 && param.address <= 219)
   .sort((a, b) => a.address - b.address);
 
 function PresetManager() {
@@ -55,12 +55,130 @@ function PresetManager() {
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [activeBank, setActiveBank] = useState(-1);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
-  const [bulkEditAddress, setBulkEditAddress] = useState(null);
-  const [bulkEditValue, setBulkEditValue] = useState(null);
+  const [bulkEdits, setBulkEdits] = useState([{ address: null, value: null }]); // Define bulkEdits state
 
   const getPresetColor = (preset) => {
     const hue = preset.values[20] || 0;
     return `hsl(${hue}, 100%, 50%)`;
+  };
+
+  const addBulkEdit = () => {
+    setBulkEdits([...bulkEdits, { address: null, value: null }]);
+  };
+
+  const removeBulkEdit = (index) => {
+    if (bulkEdits.length === 1) return; // Prevent removing the last pair
+    setBulkEdits(bulkEdits.filter((_, i) => i !== index));
+  };
+
+  const updateBulkEdit = (index, field, value) => {
+    setBulkEdits((prev) =>
+      prev.map((edit, i) =>
+        i === index
+          ? {
+              ...edit,
+              [field]: field === "address" ? (value ? Number(value) : null) : Number(value) || null,
+            }
+          : edit
+      )
+    );
+  };
+
+  const handleBulkEdit = async () => {
+    // Validate all bulk edits
+    for (const edit of bulkEdits) {
+      if (edit.address == null || edit.value == null) {
+        alert("Please select a parameter and enter a value for all fields");
+        return;
+      }
+      if (edit.address < 10 || edit.address > 219) {
+        alert(`Parameter address ${edit.address} must be between 10 and 219`);
+        return;
+      }
+      const param = validParameters.find((p) => p.address === edit.address);
+      if (!param) {
+        alert(`Invalid parameter address: ${edit.address}`);
+        return;
+      }
+      const isFloat = param.data_type === "float";
+      const maxValue = param.max_value || (isFloat ? 100 : 16383);
+      const minValue = param.min_value || 0;
+      const adjustedValue = isFloat ? Math.round(edit.value * 100) : Math.round(edit.value);
+      if (edit.value < minValue || edit.value > maxValue) {
+        alert(
+          `Value for ${param.displayName} must be between ${minValue} and ${maxValue}${
+            isFloat ? " (maps to 0-100.0 in firmware)" : ""
+          }`
+        );
+        return;
+      }
+    }
+
+    if (!controller || !controller.isConnected()) {
+      console.error(">> No device connected for bulk edit upload");
+      alert("No device connected");
+      return;
+    }
+
+    setPresetState((prev) => {
+      const newPresets = [...prev.presets];
+      const targetIndexes = selected.length > 0 ? selected : prev.presets.map((_, i) => i);
+
+      targetIndexes.forEach((index) => {
+        newPresets[index] = {
+          ...newPresets[index],
+          values: newPresets[index].values.map((v, i) => {
+            const edit = bulkEdits.find((e) => e.address === i);
+            if (edit) {
+              const param = validParameters.find((p) => p.address === edit.address);
+              const isFloat = param.data_type === "float";
+              return isFloat ? Math.round(edit.value * 100) : Math.round(edit.value);
+            }
+            return v;
+          }),
+        };
+      });
+
+      const presetsToUpload = newPresets
+        .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
+        .map((preset) => ({
+          value: btoa(preset.values.join(';')),
+          name: preset.title,
+          author: preset.author,
+          description: preset.note,
+        }));
+
+      console.log(
+        `>> Bulk edit: Setting ${bulkEdits
+          .map((e) => {
+            const param = validParameters.find((p) => p.address === e.address);
+            return `${param.displayName} (address ${e.address}) to ${e.value}`;
+          })
+          .join(", ")} for presets ${selected.length > 0 ? selected.join(',') : 'all'}`
+      );
+
+      (async () => {
+        try {
+          setIsLoadingPresets(true);
+          const success = await controller.uploadAllPresets(presetsToUpload);
+          setIsLoadingPresets(false);
+          if (success) {
+            console.log(">> Bulk edit upload successful");
+            alert("Bulk edit applied and uploaded successfully");
+            setBulkEdits([{ address: null, value: null }]); // Reset after success
+          } else {
+            console.error(">> Bulk edit upload failed");
+            alert("Failed to upload presets: device not connected or invalid data");
+          }
+        } catch (error) {
+          setIsLoadingPresets(false);
+          console.error(`>> Error uploading presets: ${error.message}`);
+          alert(`Error uploading presets: ${error.message}`);
+        }
+      })();
+
+      return { presets: newPresets };
+    });
   };
 
   useEffect(() => {
@@ -187,81 +305,6 @@ function PresetManager() {
     } else {
       alert("No device connected");
     }
-  };
-
-const handleBulkEdit = async () => {
-    if (bulkEditAddress == null || bulkEditValue == null) {
-      alert("Please select a parameter and enter a value");
-      return;
-    }
-    if (bulkEditAddress < 21 || bulkEditAddress > 219) {
-      alert("Parameter address must be between 21 and 219");
-      return;
-    }
-
-    const param = validParameters.find(p => p.address === bulkEditAddress);
-    const isFloat = param?.data_type === "float";
-    const maxValue = param?.max_value || (isFloat ? 100 : 16383);
-    const minValue = param?.min_value || 0;
-    const adjustedValue = isFloat ? Math.round(bulkEditValue * 100) : Math.round(bulkEditValue);
-    console.log(`>> Scaling ${param.displayName}: input=${bulkEditValue}, adjusted=${adjustedValue}`);
-
-    if (bulkEditValue < minValue || bulkEditValue > maxValue) {
-      alert(`Value must be ${minValue}-${maxValue} for ${param.displayName}${isFloat ? " (maps to 0-100.0 in firmware)" : ""}`);
-      return;
-    }
-
-    if (!controller || !controller.isConnected()) {
-      console.error(">> No device connected for bulk edit upload");
-      alert("No device connected");
-      return;
-    }
-
-    setPresetState((prev) => {
-      const newPresets = [...prev.presets];
-      const targetIndexes = selected.length > 0 ? selected : prev.presets.map((_, i) => i);
-
-      targetIndexes.forEach((index) => {
-        newPresets[index] = {
-          ...newPresets[index],
-          values: newPresets[index].values.map((v, i) =>
-            i === bulkEditAddress ? adjustedValue : v
-          ),
-        };
-      });
-
-      const presetsToUpload = newPresets
-        .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
-        .map((preset, index) => ({
-          value: btoa(preset.values.join(';')),
-          name: preset.title,
-          author: preset.author,
-          description: preset.note,
-        }));
-
-      console.log(`>> Bulk edit: Setting ${param.displayName} (address ${bulkEditAddress}) to ${adjustedValue} for presets ${selected.length > 0 ? selected.join(',') : 'all'}`);
-
-      (async () => {
-        try {
-          setIsLoadingPresets(true);
-          const success = await controller.uploadAllPresets(presetsToUpload);
-          setIsLoadingPresets(false);
-          if (success) {
-            console.log(">> Bulk edit upload successful");
-            alert("Bulk edit applied and uploaded successfully");
-          } else {
-            console.error(">> Bulk edit upload failed");
-            alert("Failed to upload presets: device not connected or invalid data");
-          }
-        } catch (error) {
-          setIsLoadingPresets(false);
-          console.error(`>> Error uploading presets: ${error.message}`);
-          alert(`Error uploading presets: ${error.message}`);
-        }
-      })();
-
-      return { presets: newPresets };
-    });
   };
 
   const handleUploadOrder = async () => {
@@ -495,155 +538,175 @@ const handleBulkEdit = async () => {
     });
   };
 
-  
-return (
-  <div className="preset-manager">
-    <h1>minichord preset manager</h1>
-    <div id="status_zone" className={connectionStatus.connected ? "connected" : "disconnected"}>
-      <span id="dot"></span>
-      <span id="status_value"></span>
-    </div>
-    {isLoadingPresets && <div className="loading">Loading presets...</div>}
-    <div className="controls">
-      <div className="button-container">
-        <button onClick={handleSavePresets} disabled={!controller?.isConnected()}>
-          Export Presets (JSON)
-        </button>
-        <input
-          type="file"
-          accept=".json"
-          onChange={handleFileUpload}
-          style={{ display: "none" }}
-          id="file-upload"
-        />
-        <label htmlFor="file-upload">
-          <button
-            type="button"
-            disabled={!controller?.isConnected()}
-            onClick={() => document.getElementById("file-upload").click()}
-          >
-            Import Presets (JSON)
-          </button>
-        </label>
-        <button
-          onClick={handleResetMemory}
-          disabled={!controller?.isConnected()}
-        >
-          Wipe Memory
-        </button>
-        <button
-          onClick={handleFetchAllPresets}
-          disabled={!controller?.isConnected()}
-        >
-          Fetch All Presets
-        </button>
-        <button
-          onClick={() => setSelected(presetState.presets.map((_, index) => index))}
-          disabled={!controller?.isConnected()}
-        >
-          Select All Presets
-        </button>
-        <button
-          onClick={handleUploadOrder}
-          disabled={!controller?.isConnected()}
-        >
-          Upload Order
-        </button>
+  return (
+    <div className="preset-manager">
+      <h1>minichord preset manager</h1>
+      <div id="status_zone" className={connectionStatus.connected ? "connected" : "disconnected"}>
+        <span id="dot"></span>
+        <span id="status_value"></span>
       </div>
-      <div className="bulk-edit-container">
-        <div className="bulk-edit">
-          <select
-            value={bulkEditAddress ?? ""}
-            onChange={(e) => {
-              const address = Number(e.target.value);
-              setBulkEditAddress(address || null);
-              setBulkEditValue(null);
-            }}
-            title={validParameters.find(p => p.address === bulkEditAddress)?.tooltip || "Select a parameter"}
+      {isLoadingPresets && <div className="loading">Loading presets...</div>}
+      <div className="controls">
+        <div className="button-container">
+          <button onClick={handleSavePresets} disabled={!controller?.isConnected()}>
+            Export Presets (JSON)
+          </button>
+          <input
+            type="file"
+            accept=".json"
+            onChange={handleFileUpload}
+            style={{ display: "none" }}
+            id="file-upload"
+          />
+          <label htmlFor="file-upload">
+            <button
+              type="button"
+              disabled={!controller?.isConnected()}
+              onClick={() => document.getElementById("file-upload").click()}
+            >
+              Import Presets (JSON)
+            </button>
+          </label>
+          <button
+            onClick={handleResetMemory}
+            disabled={!controller?.isConnected()}
           >
-            <option value="" disabled>Select Parameter</option>
-            {validParameters.map((param) => (
-              <option key={param.address} value={param.address}>
-                {param.displayName} (Address {param.address})
-              </option>
+            Wipe Memory
+          </button>
+          <button
+            onClick={handleFetchAllPresets}
+            disabled={!controller?.isConnected()}
+          >
+            Fetch All Presets
+          </button>
+          <button
+            onClick={() => setSelected(presetState.presets.map((_, index) => index))}
+            disabled={!controller?.isConnected()}
+          >
+            Select All Presets
+          </button>
+          <button
+            onClick={handleUploadOrder}
+            disabled={!controller?.isConnected()}
+          >
+            Upload Order
+          </button>
+        </div>
+        <div className="bulk-edit-container">
+          <div className="bulk-edit">
+            {bulkEdits.map((edit, index) => (
+              <div key={index} className="bulk-edit-row">
+                <select
+                  value={edit.address ?? ""}
+                  onChange={(e) => updateBulkEdit(index, "address", e.target.value)}
+                  title={validParameters.find((p) => p.address === edit.address)?.tooltip || "Select a parameter"}
+                >
+                  <option value="" disabled>Select Parameter</option>
+                  {validParameters.map((param) => (
+                    <option key={param.address} value={param.address}>
+                      {param.displayName} (Address {param.address})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min={validParameters.find((p) => p.address === edit.address)?.min_value || 0}
+                  max={validParameters.find((p) => p.address === edit.address)?.max_value || 16383}
+                  step={validParameters.find((p) => p.address === edit.address)?.data_type === "float" ? "0.1" : "1"}
+                  placeholder={
+                    validParameters.find((p) => p.address === edit.address)?.data_type === "float"
+                      ? `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 100}, maps to 0-100.0)`
+                      : `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 16383})`
+                  }
+                  value={edit.value ?? ""}
+                  onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
+                />
+                {bulkEdits.length > 1 && (
+                  <button
+                    className="remove-bulk-edit"
+                    onClick={() => removeBulkEdit(index)}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
             ))}
-          </select>
-          <input
-            type="number"
-            min={validParameters.find(p => p.address === bulkEditAddress)?.min_value || 0}
-            max={validParameters.find(p => p.address === bulkEditAddress)?.max_value || 16383}
-            step={validParameters.find(p => p.address === bulkEditAddress)?.data_type === "float" ? "0.1" : "1"}
-            placeholder={
-              validParameters.find(p => p.address === bulkEditAddress)?.data_type === "float"
-                ? `Value (0-${validParameters.find(p => p.address === bulkEditAddress)?.max_value || 100}, maps to 0-100.0)`
-                : `Value (0-${validParameters.find(p => p.address === bulkEditAddress)?.max_value || 16383})`
-            }
-            onChange={(e) => setBulkEditValue(Number(e.target.value))}
-          />
-          <span className="bulk-edit-note">
-            {bulkEditAddress
-              ? validParameters.find(p => p.address === bulkEditAddress)?.data_type === "float"
-                ? `Enter ${validParameters.find(p => p.address === bulkEditAddress)?.min_value}-${validParameters.find(p => p.address === bulkEditAddress)?.max_value} for ${validParameters.find(p => p.address === bulkEditAddress)?.displayName} (maps to 0-100.0 in firmware)`
-                : `Enter ${validParameters.find(p => p.address === bulkEditAddress)?.min_value}-${validParameters.find(p => p.address === bulkEditAddress)?.max_value} for ${validParameters.find(p => p.address === bulkEditAddress)?.displayName}`
-              : "Select a parameter to set value range"}
-          </span>
-          <button
-            onClick={handleBulkEdit}
-            disabled={!controller?.isConnected()}
-          >
-            Apply to {selected.length > 0 ? "Selected" : "All"}
-          </button>
+            <button
+              className="add-bulk-edit"
+              onClick={addBulkEdit}
+              disabled={bulkEdits.length >= validParameters.length}
+            >
+              Add Parameter
+            </button>
+            <span className="bulk-edit-note">
+              {bulkEdits.every((edit) => edit.address)
+                ? bulkEdits
+                    .map((edit) => {
+                      const param = validParameters.find((p) => p.address === edit.address);
+                      return param.data_type === "float"
+                        ? `Enter ${param.min_value}-${param.max_value} for ${param.displayName} (maps to 0-100.0 in firmware)`
+                        : `Enter ${param.min_value}-${param.max_value} for ${param.displayName}`;
+                    })
+                    .join("; ")
+                : "Select parameters to set value ranges"}
+            </span>
+            <button
+              onClick={handleBulkEdit}
+              disabled={!controller?.isConnected()}
+            >
+              Apply to {selected.length > 0 ? "Selected" : "All"}
+            </button>
+          </div>
         </div>
       </div>
+      <div className="presets">
+        {presetState.presets.map((preset, index) => (
+          <div
+            key={preset.id}
+            className={`preset ${selected.includes(index) ? "selected" : ""} ${
+              activeBank === index ? "active" : ""
+            }`}
+            style={{ borderColor: getPresetColor(preset) }}
+            draggable
+            onDragStart={(e) => {
+              e.stopPropagation();
+              handleDragStart(index);
+            }}
+            onDragOver={(e) => handleDragOver(e, index)}
+            onDrop={(e) => {
+              e.stopPropagation();
+              handleDrop(index);
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePresetSelect(index);
+            }}
+          >
+            <input
+              type="text"
+              value={preset.title}
+              onChange={(e) => handlePresetChange(index, "title", e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Preset Title"
+            />
+            <input
+              type="text"
+              value={preset.author}
+              onChange={(e) => handlePresetChange(index, "author", e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Author"
+            />
+            <textarea
+              value={preset.note}
+              onChange={(e) => handlePresetChange(index, "note", e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Note"
+            />
+          </div>
+        ))}
+      </div>
     </div>
-    <div className="presets">
-      {presetState.presets.map((preset, index) => (
-        <div
-          key={preset.id}
-          className={`preset ${selected.includes(index) ? "selected" : ""} ${
-            activeBank === index ? "active" : ""
-          }`}
-          style={{ borderColor: getPresetColor(preset) }}
-          draggable
-          onDragStart={(e) => {
-            e.stopPropagation();
-            handleDragStart(index);
-          }}
-          onDragOver={(e) => handleDragOver(e, index)}
-          onDrop={(e) => {
-            e.stopPropagation();
-            handleDrop(index);
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            handlePresetSelect(index);
-          }}
-        >
-          <input
-            type="text"
-            value={preset.title}
-            onChange={(e) => handlePresetChange(index, "title", e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="Preset Title"
-          />
-          <input
-            type="text"
-            value={preset.author}
-            onChange={(e) => handlePresetChange(index, "author", e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="Author"
-          />
-          <textarea
-            value={preset.note}
-            onChange={(e) => handlePresetChange(index, "note", e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="Note"
-          />
-        </div>
-      ))}
-    </div>
-  </div>
-);
+  );
 }
 
 export default PresetManager;
