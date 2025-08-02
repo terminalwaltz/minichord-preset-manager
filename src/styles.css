@@ -150,7 +150,8 @@ body {
   flex-wrap: wrap; /* Allow wrapping for small screens */
 }
 
-.bulk-edit select {
+.bulk-edit select,
+.bulk-edit .bool-select {
   padding: 0.5em;
   border: 1px solid black;
   font-family: monospace;
@@ -160,6 +161,10 @@ body {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
+}
+
+.bulk-edit .bool-select {
+  width: 100px; /* Match number input width */
 }
 
 .bulk-edit input[type="number"] {
@@ -251,8 +256,13 @@ body {
     grid-template-columns: repeat(4, 1fr);
   }
 
-  .bulk-edit select {
+  .bulk-edit select,
+  .bulk-edit .bool-select {
     width: 250px;
+  }
+
+  .bulk-edit .bool-select {
+    width: 80px;
   }
 
   .bulk-edit input[type="number"] {
@@ -282,8 +292,13 @@ body {
     width: 100%;
   }
 
-  .bulk-edit select {
+  .bulk-edit select,
+  .bulk-edit .bool-select {
     width: 200px;
+  }
+
+  .bulk-edit .bool-select {
+    width: 70px;
   }
 
   .bulk-edit input[type="number"] {

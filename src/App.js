@@ -10,8 +10,8 @@ const validParameters = [
     name: param.name,
     displayName: `global::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
     data_type: param.data_type,
-    min_value: param.min_value,
-    max_value: param.max_value,
+    min_value: param.data_type === "bool" ? 0 : param.min_value, // Ensure bools allow 0
+    max_value: param.data_type === "bool" ? 1 : param.max_value, // Ensure bools max at 1
     tooltip: param.tooltip
   })),
   ...parametersData.harp_parameter.map(param => ({
@@ -19,8 +19,8 @@ const validParameters = [
     name: param.name,
     displayName: `harp::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
     data_type: param.data_type,
-    min_value: param.min_value,
-    max_value: param.max_value,
+    min_value: param.data_type === "bool" ? 0 : param.min_value,
+    max_value: param.data_type === "bool" ? 1 : param.max_value,
     tooltip: param.tooltip
   })),
   ...parametersData.chord_parameter.map(param => ({
@@ -28,12 +28,12 @@ const validParameters = [
     name: param.name,
     displayName: `chord::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
     data_type: param.data_type,
-    min_value: param.min_value,
-    max_value: param.max_value,
+    min_value: param.data_type === "bool" ? 0 : param.min_value,
+    max_value: param.data_type === "bool" ? 1 : param.max_value,
     tooltip: param.tooltip
   }))
 ]
-  .filter(param => param.address >= 10 && param.address <= 219)
+  .filter(param => param.address >= 21 && param.address <= 219)
   .sort((a, b) => a.address - b.address);
 
 function PresetManager() {
@@ -55,7 +55,7 @@ function PresetManager() {
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [activeBank, setActiveBank] = useState(-1);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
-  const [bulkEdits, setBulkEdits] = useState([{ address: null, value: null }]); // Define bulkEdits state
+  const [bulkEdits, setBulkEdits] = useState([{ address: null, value: null }]);
 
   const getPresetColor = (preset) => {
     const hue = preset.values[20] || 0;
@@ -67,17 +67,18 @@ function PresetManager() {
   };
 
   const removeBulkEdit = (index) => {
-    if (bulkEdits.length === 1) return; // Prevent removing the last pair
+    if (bulkEdits.length === 1) return;
     setBulkEdits(bulkEdits.filter((_, i) => i !== index));
   };
 
   const updateBulkEdit = (index, field, value) => {
+    console.log(`>> updateBulkEdit: index=${index}, field=${field}, value=${value}, address=${bulkEdits[index]?.address}, param=${validParameters.find(p => p.address === bulkEdits[index]?.address)?.displayName}`);
     setBulkEdits((prev) =>
       prev.map((edit, i) =>
         i === index
           ? {
               ...edit,
-              [field]: field === "address" ? (value ? Number(value) : null) : Number(value) || null,
+              [field]: field === "address" ? (value ? Number(value) : null) : (value === "" ? null : Number(value)),
             }
           : edit
       )
@@ -85,14 +86,15 @@ function PresetManager() {
   };
 
   const handleBulkEdit = async () => {
+    console.log(">> handleBulkEdit: bulkEdits=", JSON.stringify(bulkEdits));
     // Validate all bulk edits
     for (const edit of bulkEdits) {
       if (edit.address == null || edit.value == null) {
-        alert("Please select a parameter and enter a value for all fields");
+        alert("Please select a parameter and value for all fields");
         return;
       }
-      if (edit.address < 10 || edit.address > 219) {
-        alert(`Parameter address ${edit.address} must be between 10 and 219`);
+      if (edit.address < 21 || edit.address > 219) {
+        alert(`Parameter address ${edit.address} must be between 21 and 219`);
         return;
       }
       const param = validParameters.find((p) => p.address === edit.address);
@@ -101,15 +103,20 @@ function PresetManager() {
         return;
       }
       const isFloat = param.data_type === "float";
-      const maxValue = param.max_value || (isFloat ? 100 : 16383);
-      const minValue = param.min_value || 0;
+      const isBool = param.data_type === "bool";
+      const maxValue = isBool ? 1 : param.max_value || (isFloat ? 100 : 16383);
+      const minValue = isBool ? 0 : param.min_value || 0;
       const adjustedValue = isFloat ? Math.round(edit.value * 100) : Math.round(edit.value);
       if (edit.value < minValue || edit.value > maxValue) {
         alert(
           `Value for ${param.displayName} must be between ${minValue} and ${maxValue}${
-            isFloat ? " (maps to 0-100.0 in firmware)" : ""
+            isFloat ? " (maps to 0-100.0 in firmware)" : isBool ? " (0 = off, 1 = on)" : ""
           }`
         );
+        return;
+      }
+      if (isBool && ![0, 1].includes(adjustedValue)) {
+        alert(`Value for ${param.displayName} must be 0 or 1 (boolean)`);
         return;
       }
     }
@@ -165,7 +172,7 @@ function PresetManager() {
           if (success) {
             console.log(">> Bulk edit upload successful");
             alert("Bulk edit applied and uploaded successfully");
-            setBulkEdits([{ address: null, value: null }]); // Reset after success
+            setBulkEdits([{ address: null, value: null }]);
           } else {
             console.error(">> Bulk edit upload failed");
             alert("Failed to upload presets: device not connected or invalid data");
@@ -608,19 +615,32 @@ function PresetManager() {
                     </option>
                   ))}
                 </select>
-                <input
-                  type="number"
-                  min={validParameters.find((p) => p.address === edit.address)?.min_value || 0}
-                  max={validParameters.find((p) => p.address === edit.address)?.max_value || 16383}
-                  step={validParameters.find((p) => p.address === edit.address)?.data_type === "float" ? "0.1" : "1"}
-                  placeholder={
-                    validParameters.find((p) => p.address === edit.address)?.data_type === "float"
-                      ? `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 100}, maps to 0-100.0)`
-                      : `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 16383})`
-                  }
-                  value={edit.value ?? ""}
-                  onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
-                />
+                {validParameters.find((p) => p.address === edit.address)?.data_type === "bool" ? (
+                  <select
+                    key={`bool-select-${edit.address}`} // Force re-render when address changes
+                    value={edit.value ?? ""}
+                    onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
+                    className="bool-select"
+                  >
+                    <option value="" disabled>Select Value</option>
+                    <option value="0">Off (0)</option>
+                    <option value="1">On (1)</option>
+                  </select>
+                ) : (
+                  <input
+                    type="number"
+                    min={validParameters.find((p) => p.address === edit.address)?.min_value || 0}
+                    max={validParameters.find((p) => p.address === edit.address)?.max_value || 16383}
+                    step={validParameters.find((p) => p.address === edit.address)?.data_type === "float" ? "0.1" : "1"}
+                    placeholder={
+                      validParameters.find((p) => p.address === edit.address)?.data_type === "float"
+                        ? `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 100}, maps to 0-100.0)`
+                        : `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 16383})`
+                    }
+                    value={edit.value ?? ""}
+                    onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
+                  />
+                )}
                 {bulkEdits.length > 1 && (
                   <button
                     className="remove-bulk-edit"
@@ -643,7 +663,9 @@ function PresetManager() {
                 ? bulkEdits
                     .map((edit) => {
                       const param = validParameters.find((p) => p.address === edit.address);
-                      return param.data_type === "float"
+                      return param.data_type === "bool"
+                        ? `Select Off (0) or On (1) for ${param.displayName}`
+                        : param.data_type === "float"
                         ? `Enter ${param.min_value}-${param.max_value} for ${param.displayName} (maps to 0-100.0 in firmware)`
                         : `Enter ${param.min_value}-${param.max_value} for ${param.displayName}`;
                     })
