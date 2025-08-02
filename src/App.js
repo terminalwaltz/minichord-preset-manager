@@ -496,15 +496,16 @@ const handleBulkEdit = async () => {
   };
 
   
-  return (
-    <div className="preset-manager">
-      <h1>minichord preset manager</h1>
+return (
+  <div className="preset-manager">
+    <h1>minichord preset manager</h1>
     <div id="status_zone" className={connectionStatus.connected ? "connected" : "disconnected"}>
       <span id="dot"></span>
       <span id="status_value"></span>
     </div>
-      {isLoadingPresets && <div className="loading">Loading presets...</div>}
-      <div className="controls">
+    {isLoadingPresets && <div className="loading">Loading presets...</div>}
+    <div className="controls">
+      <div className="button-container">
         <button onClick={handleSavePresets} disabled={!controller?.isConnected()}>
           Export Presets (JSON)
         </button>
@@ -548,13 +549,15 @@ const handleBulkEdit = async () => {
         >
           Upload Order
         </button>
+      </div>
+      <div className="bulk-edit-container">
         <div className="bulk-edit">
           <select
             value={bulkEditAddress ?? ""}
             onChange={(e) => {
               const address = Number(e.target.value);
               setBulkEditAddress(address || null);
-              setBulkEditValue(null); // Reset value to avoid invalid inputs
+              setBulkEditValue(null);
             }}
             title={validParameters.find(p => p.address === bulkEditAddress)?.tooltip || "Select a parameter"}
           >
@@ -592,54 +595,55 @@ const handleBulkEdit = async () => {
           </button>
         </div>
       </div>
-      <div className="presets">
-        {presetState.presets.map((preset, index) => (
-          <div
-            key={preset.id}
-            className={`preset ${selected.includes(index) ? "selected" : ""} ${
-              activeBank === index ? "active" : ""
-            }`}
-            style={{ borderColor: getPresetColor(preset) }}
-            draggable
-            onDragStart={(e) => {
-              e.stopPropagation();
-              handleDragStart(index);
-            }}
-            onDragOver={(e) => handleDragOver(e, index)}
-            onDrop={(e) => {
-              e.stopPropagation();
-              handleDrop(index);
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              handlePresetSelect(index);
-            }}
-          >
-            <input
-              type="text"
-              value={preset.title}
-              onChange={(e) => handlePresetChange(index, "title", e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Preset Title"
-            />
-            <input
-              type="text"
-              value={preset.author}
-              onChange={(e) => handlePresetChange(index, "author", e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Author"
-            />
-            <textarea
-              value={preset.note}
-              onChange={(e) => handlePresetChange(index, "note", e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Note"
-            />
-          </div>
-        ))}
-      </div>
     </div>
-  );
+    <div className="presets">
+      {presetState.presets.map((preset, index) => (
+        <div
+          key={preset.id}
+          className={`preset ${selected.includes(index) ? "selected" : ""} ${
+            activeBank === index ? "active" : ""
+          }`}
+          style={{ borderColor: getPresetColor(preset) }}
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            handleDragStart(index);
+          }}
+          onDragOver={(e) => handleDragOver(e, index)}
+          onDrop={(e) => {
+            e.stopPropagation();
+            handleDrop(index);
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handlePresetSelect(index);
+          }}
+        >
+          <input
+            type="text"
+            value={preset.title}
+            onChange={(e) => handlePresetChange(index, "title", e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Preset Title"
+          />
+          <input
+            type="text"
+            value={preset.author}
+            onChange={(e) => handlePresetChange(index, "author", e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Author"
+          />
+          <textarea
+            value={preset.note}
+            onChange={(e) => handlePresetChange(index, "note", e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Note"
+          />
+        </div>
+      ))}
+    </div>
+  </div>
+);
 }
 
 export default PresetManager;
