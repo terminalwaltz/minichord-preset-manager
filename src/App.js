@@ -155,40 +155,121 @@ function PresetManager() {
     }
   };
 
-  const handleBulkEdit = async () => {
-    if (bulkEditAddress == null || bulkEditValue == null) {
-      alert("Please enter a valid address (0-255) and value (0-32767)");
-      return;
-    }
-    if (bulkEditAddress < 0 || bulkEditAddress > 255 || bulkEditValue < 0 || bulkEditValue > 32767) {
-      alert("Address must be 0-255 and value must be 0-32767");
-      return;
-    }
-    setPresetState((prev) => {
-      const newPresets = [...prev.presets];
-      selected.forEach((index) => {
-        newPresets[index] = {
-          ...newPresets[index],
-          values: newPresets[index].values.map((v, i) =>
-            i === bulkEditAddress ? bulkEditValue : v
-          ),
-        };
-      });
-      if (controller && controller.isConnected()) {
-        selected.forEach(async (index) => {
-          const preset = {
-            bankNumber: index,
-            parameters: newPresets[index].values.map((v) => Math.max(0, Math.min(32767, v))),
-          };
-          const success = await controller.uploadPreset(preset);
-          if (!success) {
-            alert(`Failed to upload preset ${index + 1}: no device connected or invalid data`);
-          }
-        });
-      }
-      return { presets: newPresets };
+const scaledAddresses = [
+  24, 25, 26, 27, 28, 29, 32, 41, 46, 50, 51, 55, 58, 60, 61, 63, 64, 68, 71,
+  76, 79, 80, 81, 82, 83, 84, 85, 86, 89, 90, 91, 92, 94, 95, 96, 97, 121,
+  123, 124, 126, 127, 129, 130, 131, 132, 133, 134, 144, 145, 149, 154, 155,
+  157, 158, 159, 161, 162, 163, 167, 170, 178, 179, 180, 181, 182, 183, 184,
+  185, 190, 193, 194, 195, 196, 197
+];
+
+const handleBulkEdit = async () => {
+  if (bulkEditAddress == null || bulkEditValue == null) {
+    alert("Please enter a valid address (0-255) and value");
+    return;
+  }
+  if (bulkEditAddress < 0 || bulkEditAddress > 255) {
+    alert("Address must be 0-255");
+    return;
+  }
+
+  const isScaled = scaledAddresses.includes(bulkEditAddress);
+  const maxValue = isScaled ? 100 : 16383;
+  const adjustedValue = isScaled ? Math.round(bulkEditValue * 100) : bulkEditValue;
+
+  if (bulkEditValue < 0 || bulkEditValue > maxValue) {
+    alert(`Value must be 0-${maxValue} for address ${bulkEditAddress}${isScaled ? " (scaled to 0-100.0)" : ""}`);
+    return;
+  }
+
+  if (!controller || !controller.isConnected()) {
+    console.error(">> No device connected for bulk edit upload");
+    alert("No device connected");
+    return;
+  }
+
+  setPresetState((prev) => {
+    const newPresets = [...prev.presets];
+    const targetIndexes = selected.length > 0 ? selected : prev.presets.map((_, i) => i);
+
+    targetIndexes.forEach((index) => {
+      newPresets[index] = {
+        ...newPresets[index],
+        values: newPresets[index].values.map((v, i) =>
+          i === bulkEditAddress ? adjustedValue : v
+        ),
+      };
     });
-  };
+
+    // Perform upload inside the callback to ensure newPresets is available
+    const presetsToUpload = newPresets
+      .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
+      .map((preset, index) => ({
+        value: btoa(preset.values.join(';')),
+        name: preset.title,
+        author: preset.author,
+        description: preset.note,
+      }));
+
+    console.log(`>> Bulk edit: Setting address ${bulkEditAddress} to ${adjustedValue} for presets ${selected.length > 0 ? selected.join(',') : 'all'}`);
+
+    // Async upload inside setState callback
+    (async () => {
+      try {
+        setIsLoadingPresets(true);
+        const success = await controller.uploadAllPresets(presetsToUpload);
+        setIsLoadingPresets(false);
+        if (success) {
+          console.log(">> Bulk edit upload successful");
+          alert("Bulk edit applied and uploaded successfully");
+        } else {
+          console.error(">> Bulk edit upload failed");
+          alert("Failed to upload presets: device not connected or invalid data");
+        }
+      } catch (error) {
+        setIsLoadingPresets(false);
+        console.error(`>> Error uploading presets: ${error.message}`);
+        alert(`Error uploading presets: ${error.message}`);
+      }
+    })();
+
+    return { presets: newPresets };
+  });
+};
+
+// Add new function for uploading reordered presets
+const handleUploadOrder = async () => {
+  if (!controller || !controller.isConnected()) {
+    console.error(">> No device connected for preset order upload");
+    alert("No device connected");
+    return;
+  }
+
+  const presetsToUpload = presetState.presets.map((preset) => ({
+    value: btoa(preset.values.join(';')),
+    name: preset.title,
+    author: preset.author,
+    description: preset.note,
+  }));
+
+  console.log(">> Initiating preset order upload");
+  try {
+    setIsLoadingPresets(true);
+    const success = await controller.uploadAllPresets(presetsToUpload);
+    setIsLoadingPresets(false);
+    if (success) {
+      console.log(">> Preset order upload successful");
+      alert("Preset order uploaded successfully");
+    } else {
+      console.error(">> Preset order upload failed");
+      alert("Failed to upload preset order: device not connected or invalid data");
+    }
+  } catch (error) {
+    setIsLoadingPresets(false);
+    console.error(`>> Error uploading preset order: ${error.message}`);
+    alert(`Error uploading preset order: ${error.message}`);
+  }
+};
 
   const handlePresetSelect = (index) => {
     setSelected((prev) =>
@@ -206,28 +287,22 @@ function PresetManager() {
     e.preventDefault();
   };
 
-  const handleDrop = async (index) => {
-    if (draggedIndex === null || draggedIndex === index) return;
-    const newPresets = [...presetState.presets];
+const handleDrop = (index) => {
+  if (draggedIndex === null || draggedIndex === index) return;
+
+  setPresetState((prev) => {
+    const newPresets = [...prev.presets];
     const [draggedPreset] = newPresets.splice(draggedIndex, 1);
     newPresets.splice(index, 0, draggedPreset);
     newPresets.forEach((preset, i) => (preset.id = i));
-    setPresetState({ presets: newPresets });
-    setDraggedIndex(null);
-    if (controller && controller.isConnected()) {
-      for (let i = 0; i < newPresets.length; i++) {
-        const preset = {
-          bankNumber: i,
-          parameters: newPresets[i].values.map((v) => Math.max(0, Math.min(32767, v))),
-        };
-        const success = await controller.uploadPreset(preset);
-        if (!success) {
-          alert(`Failed to upload preset ${i + 1}: no device connected or invalid data`);
-          break;
-        }
-      }
-    }
-  };
+    console.log(`>> Reordered presets: ${newPresets.map(p => p.id).join(',')}`);
+    return { presets: newPresets };
+  });
+
+  setDraggedIndex(null);
+};
+
+
 
 const handleFileUpload = async (event) => {
   console.log(">> File upload triggered");
@@ -442,6 +517,18 @@ const handleSavePresets = () => {
           disabled={!controller?.isConnected()}
         >
           Fetch All Presets
+        </button>
+        <button
+        onClick={() => setSelected(presetState.presets.map((_, index) => index))}
+        disabled={!controller?.isConnected()}
+      >
+        Select All Presets
+      </button>
+        <button
+          onClick={handleUploadOrder}
+          disabled={!controller?.isConnected()}
+        >
+          Upload Order
         </button>
         <div className="bulk-edit">
           <input

@@ -79,3 +79,15 @@
   margin: 5px 0;
   padding: 5px;
 }
+
+.bulk-edit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bulk-edit-note {
+  font-size: 0.8em;
+  color: #666;
+  margin-left: 10px;
+}
