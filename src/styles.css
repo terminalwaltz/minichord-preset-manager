@@ -1,49 +1,145 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin-left: 5vw;
+  margin-right: 5vw;
+  font-family: sans-serif;
+  font-size: 1.6em;
+  line-height: 1.25em;
+}
+
 .preset-manager {
   padding: 20px;
-  font-family: Arial, sans-serif;
 }
 
-.connection-status .connected {
-  color: #fff;
-  background-color: #28a745;
-  border-radius: 15px;
-  padding: 5px 10px;
-  display: inline-flex;
+.title {
+  font-weight: bold;
+  font-style: italic;
+  font-size: 1em;
+  margin-bottom: 0.5em;
+}
+
+/* Connection Status */
+#status_zone {
+  border-style: solid;
+  border-radius: 1em;
+  border-width: 2px;
+  margin-bottom: 1em;
+  padding: 8px 12px;
+  display: flex;
   align-items: center;
+  font-size: 0.9em; /* Reasonable size, matches legacy */
+  max-width: 300px; /* Prevent overly wide bubble */
 }
 
-.connection-status .disconnected {
-  color: #fff;
-  background-color: #dc3545;
-  border-radius: 15px;
-  padding: 5px 10px;
-  display: inline-flex;
-  align-items: center;
+#status_zone.connected {
+  border-color: green;
+  background-color: lightgreen;
 }
 
-.connection-status .dot {
+#status_zone.disconnected {
+  border-color: orange;
+  background-color: rgba(255, 166, 0, 0.486);
+}
+
+#status_zone.unconnected {
+  border-color: red;
+  background-color: lightcoral;
+}
+
+#status_value {
+  margin-right: 0.5em;
+}
+
+#dot {
   display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: #fff;
-  margin-right: 8px;
+  margin-left: 0.5em;
 }
 
+.connected #dot {
+  background-color: green;
+}
+
+.disconnected #dot {
+  background-color: orange;
+}
+
+.unconnected #dot {
+  background-color: red;
+}
+
+.unconnected #status_value::after {
+  content: "minichord unconnected";
+}
+
+.disconnected #status_value::after {
+  content: "minichord disconnected";
+}
+
+.connected #status_value::after {
+  content: "minichord connected";
+}
+
+/* Loading */
 .loading {
-  font-size: 1.2em;
+  font-size: 0.9em;
   color: blue;
   margin: 10px 0;
 }
 
+/* Controls */
 .controls {
-  margin-bottom: 20px;
+  margin-bottom: 1em;
+  position: sticky;
+  top: 0;
+  background-color: white;
+  z-index: 2;
+}
+
+.line {
+  display: flex;
+  flex-flow: row wrap;
+  width: 100%;
+}
+
+.bloc {
+  flex: 1;
+  width: 100%;
+}
+
+.button-container {
+  padding: 0.5em;
+}
+
+.button-container .line {
+  margin-bottom: 0.5em;
 }
 
 .controls button {
-  margin-right: 10px;
-  padding: 8px 16px;
+  background-color: white;
+  border: 1px solid black;
+  box-sizing: border-box;
+  color: black;
   cursor: pointer;
+  font-family: sans-serif;
+  font-size: 1em;
+  padding: 0.2em;
+  margin-right: 0.5em;
+  margin-left: 0.5em;
+  width: 100%;
+  text-align: center;
+}
+
+.controls button:hover,
+.controls button:focus {
+  opacity: 0.75;
 }
 
 .controls button:disabled {
@@ -51,6 +147,46 @@
   opacity: 0.5;
 }
 
+.bulk-edit-container {
+  padding: 0.5em;
+}
+
+.bulk-edit {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Bulk Edit */
+.bulk-edit select {
+  padding: 0.2em;
+  border: 1px solid black;
+  font-family: monospace;
+  font-size: 1em;
+  background-color: white;
+  text-align: right;
+  width: 300px; /* Wide for granular names */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+.bulk-edit input[type="number"] {
+  padding: 0.2em;
+  border: 1px solid black;
+  font-family: sans-serif;
+  font-size: 1em;
+  width: 100px;
+}
+
+.bulk-edit-note {
+  font-size: 0.55em;
+  color: #666;
+  margin-left: 10px;
+}
+
+/* Presets */
 .presets {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -58,7 +194,7 @@
 }
 
 .preset {
-  border: 2px solid #000;
+  border: 2px solid black;
   padding: 10px;
   border-radius: 5px;
   cursor: move;
@@ -77,22 +213,61 @@
 .preset textarea {
   width: 100%;
   margin: 5px 0;
-  padding: 5px;
+  padding: 0.2em;
+  border: 1px solid black;
+  font-family: sans-serif;
+  font-size: 0.9em;
 }
 
-.bulk-edit {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+/* Responsive Adjustments */
+@media all and (min-width: 1200px) {
+  .B0 { display: none; }
+  .B1 { flex: 1; }
+  .B2 { flex: 2; }
+  .B3 { flex: 3; }
+  .B4 { flex: 4; }
+  .B5 { flex: 5; }
+  .B6 { flex: 6; }
+  .B7 { flex: 7; }
+  .B8 { flex: 8; }
+  .B9 { flex: 1 100%; }
 }
 
-.bulk-edit select {
-  padding: 5px;
-  width: 300px; /* Wider for longer parameter names */
+@media all and (min-width: 850px) and (max-width: 1200px) {
+  body { margin: 1vw; }
+  .button-container, .bulk-edit-container { padding: 0.5em; }
+  .bulk-edit select { width: 250px; }
+  .M0 { display: none; }
+  .M1 { flex: 1; }
+  .M2 { flex: 2; }
+  .M3 { flex: 3; }
+  .M4 { flex: 4; }
+  .M5 { flex: 5; }
+  .M6 { flex: 6; }
+  .M7 { flex: 7; }
+  .M8 { flex: 8; }
+  .M9 { flex: 1 100%; }
 }
 
-.bulk-edit-note {
-  font-size: 0.8em;
-  color: #666;
-  margin-left: 10px;
+@media all and (max-width: 850px) {
+  body { margin: 0; font-size: 1.5em; }
+  .controls {
+    position: relative;
+    border: 2px dashed black;
+    background-color: whitesmoke;
+    padding: 0.5em;
+    font-size: 0.9em;
+  }
+  .bulk-edit select { width: 200px; }
+  .presets { grid-template-columns: 1fr; }
+  .S0 { display: none; }
+  .S1 { flex: 1; }
+  .S2 { flex: 2; }
+  .S3 { flex: 3; }
+  .S4 { flex: 4; }
+  .S5 { flex: 5; }
+  .S6 { flex: 6; }
+  .S7 { flex: 7; }
+  .S8 { flex: 8; }
+  .S9 { flex: 1 100%; }
 }

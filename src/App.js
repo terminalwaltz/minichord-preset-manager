@@ -3,12 +3,12 @@ import MiniChordController from "./minichordcontroller";
 import "./styles.css";
 import parametersData from './parameters.json'; // Import parameters.json
 
-// Combine parameters from all groups and filter for addresses 21-219
+// Combine parameters, use parameters.json ranges
 const validParameters = [
   ...parametersData.global_parameter.map(param => ({
     address: param.sysex_adress,
     name: param.name,
-    displayName: `global::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`, // Capitalize first letters
+    displayName: `global::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
     data_type: param.data_type,
     min_value: param.min_value,
     max_value: param.max_value,
@@ -201,9 +201,10 @@ const handleBulkEdit = async () => {
 
     const param = validParameters.find(p => p.address === bulkEditAddress);
     const isFloat = param?.data_type === "float";
-    const maxValue = param?.max_value || (isFloat ? 1 : 16383);
+    const maxValue = param?.max_value || (isFloat ? 100 : 16383);
     const minValue = param?.min_value || 0;
-    const adjustedValue = isFloat ? Math.round(bulkEditValue * 10000) : Math.round(bulkEditValue);
+    const adjustedValue = isFloat ? Math.round(bulkEditValue * 100) : Math.round(bulkEditValue);
+    console.log(`>> Scaling ${param.displayName}: input=${bulkEditValue}, adjusted=${adjustedValue}`);
 
     if (bulkEditValue < minValue || bulkEditValue > maxValue) {
       alert(`Value must be ${minValue}-${maxValue} for ${param.displayName}${isFloat ? " (maps to 0-100.0 in firmware)" : ""}`);
@@ -497,18 +498,11 @@ const handleBulkEdit = async () => {
   
   return (
     <div className="preset-manager">
-      <h1>MiniChord Preset Manager</h1>
-      <div className="connection-status">
-        {connectionStatus.connected ? (
-          <span className="connected">
-            <span className="dot"></span> {connectionStatus.message}
-          </span>
-        ) : (
-          <span className="disconnected">
-            <span className="dot"></span> {connectionStatus.message}
-          </span>
-        )}
-      </div>
+      <h1>minichord preset manager</h1>
+    <div id="status_zone" className={connectionStatus.connected ? "connected" : "disconnected"}>
+      <span id="dot"></span>
+      <span id="status_value"></span>
+    </div>
       {isLoadingPresets && <div className="loading">Loading presets...</div>}
       <div className="controls">
         <button onClick={handleSavePresets} disabled={!controller?.isConnected()}>
@@ -575,10 +569,10 @@ const handleBulkEdit = async () => {
             type="number"
             min={validParameters.find(p => p.address === bulkEditAddress)?.min_value || 0}
             max={validParameters.find(p => p.address === bulkEditAddress)?.max_value || 16383}
-            step={validParameters.find(p => p.address === bulkEditAddress)?.data_type === "float" ? "0.01" : "1"}
+            step={validParameters.find(p => p.address === bulkEditAddress)?.data_type === "float" ? "0.1" : "1"}
             placeholder={
               validParameters.find(p => p.address === bulkEditAddress)?.data_type === "float"
-                ? `Value (0-${validParameters.find(p => p.address === bulkEditAddress)?.max_value || 1}, maps to 0-100.0)`
+                ? `Value (0-${validParameters.find(p => p.address === bulkEditAddress)?.max_value || 100}, maps to 0-100.0)`
                 : `Value (0-${validParameters.find(p => p.address === bulkEditAddress)?.max_value || 16383})`
             }
             onChange={(e) => setBulkEditValue(Number(e.target.value))}
