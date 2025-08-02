@@ -19,11 +19,10 @@ class MiniChordController {
     };
     this.onConnectionChange = null;
     this.onDataReceived = null;
-    this.onAllPresetsReceived = null; // New callback for all presets
+    this.onAllPresetsReceived = null;
     this.json_reference = "../json/minichord.json";
   }
 
-  // Initialize MIDI connection
   async initialize() {
     try {
       console.log(">> Requesting MIDI access");
@@ -39,7 +38,6 @@ class MiniChordController {
     }
   }
 
-  // Handle MIDI access
   handleMIDIAccess(midiAccess) {
     console.log(">> Available outputs:");
     for (const entry of midiAccess.outputs) {
@@ -84,7 +82,6 @@ class MiniChordController {
     }
   }
 
-  // Handle MIDI state changes
   handleStateChange(event) {
     console.log(">> MIDI state change received");
     console.log(event);
@@ -109,64 +106,72 @@ class MiniChordController {
     }
   }
 
-  // Process incoming MIDI data
   processCurrentData(midiMessage) {
-    const data = midiMessage.data.slice(1); // Remove 0xF0
-      if (data.length === this.parameter_size * 2 + 1) {
-        console.log(">> Processing single preset data");
-        const processedData = {
-          parameters: [],
-          rhythmData: [],
-          bankNumber: data[2 * 1],
-          firmwareVersion: 0,
-        };
+    if (midiMessage.data[0] !== 0xF0 || midiMessage.data[midiMessage.data.length - 1] !== 0xF7) {
+      console.log(">> Ignoring invalid SysEx message (missing F0 or F7)");
+      return;
+    }
+    const data = midiMessage.data.slice(1, -1);
+    const expectedSinglePresetLength = this.parameter_size * 2;
+    const expectedAllPresetsLength = this.preset_number * this.parameter_size * 2;
 
-        for (let i = 2; i < this.parameter_size; i++) {
-          const sysex_value = data[2 * i] + 128 * data[2 * i + 1];
-          if (i === this.firmware_adress) {
-            processedData.firmwareVersion = sysex_value / this.float_multiplier;
-            if (processedData.firmwareVersion < this.min_firmware_accepted) {
-              alert("Please update the minichord firmware");
-            }
-          } else if (i >= this.base_adress_rythm && i < this.base_adress_rythm + 16) {
-            const j = i - this.base_adress_rythm;
-            const rhythmBits = [];
-            for (let k = 0; k < 7; k++) {
-              rhythmBits[k] = !!(sysex_value & (1 << k));
-            }
-            processedData.rhythmData[j] = rhythmBits;
-          } else {
-            processedData.parameters[i] = sysex_value;
-          }
-        }
+    if (data.length === expectedSinglePresetLength) {
+      console.log(">> Processing single preset data");
+      const processedData = {
+        parameters: [],
+        rhythmData: [],
+        bankNumber: data[2 * 1],
+        firmwareVersion: 0,
+      };
 
-        this.active_bank_number = processedData.bankNumber;
-        if (this.onDataReceived) {
-          this.onDataReceived(processedData);
-        }
-      } else if (data.length === this.preset_number * this.parameter_size * 2 || data.length === this.preset_number * this.parameter_size * 2 + 1) {
-        console.log(">> Processing all presets data");
-        const allPresets = [];
-        for (let bank = 0; bank < this.preset_number; bank++) {
-          const parameters = [];
-          for (let i = 0; i < this.parameter_size; i++) {
-            const offset = bank * this.parameter_size * 2 + 2 * i;
-            const sysex_value = data[offset] + 128 * data[offset + 1];
-            parameters[i] = sysex_value;
+      for (let i = 0; i < this.parameter_size; i++) {
+        const sysex_value = data[2 * i] + 128 * data[2 * i + 1];
+        if (i === this.firmware_adress) {
+          processedData.firmwareVersion = sysex_value / this.float_multiplier;
+          if (processedData.firmwareVersion < this.min_firmware_accepted) {
+            alert("Please update the minichord firmware");
           }
-          allPresets[bank] = { bankNumber: bank, parameters };
+        } else if (i >= this.base_adress_rythm && i < this.base_adress_rythm + 16) {
+          const j = i - this.base_adress_rythm;
+          const rhythmBits = [];
+          for (let k = 0; k < 7; k++) {
+            rhythmBits[k] = !!(sysex_value & (1 << k));
+          }
+          processedData.rhythmData[j] = rhythmBits;
+        } else {
+          processedData.parameters[i] = sysex_value;
         }
-        if (this.onAllPresetsReceived) {
-          this.onAllPresetsReceived(allPresets);
-        }
-      } else {
-        console.log(`>> Ignoring MIDI message with unexpected length: ${data.length}`);
       }
+
+      this.active_bank_number = processedData.bankNumber;
+      if (this.onDataReceived) {
+        this.onDataReceived(processedData);
+      }
+    } else if (data.length === expectedAllPresetsLength) {
+      console.log(`>> Processing all presets data (${data.length} bytes)`);
+      const allPresets = [];
+      for (let bank = 0; bank < this.preset_number; bank++) {
+        const parameters = [];
+        for (let i = 0; i < this.parameter_size; i++) {
+          const offset = bank * this.parameter_size * 2 + 2 * i;
+          const sysex_value = data[offset] + 128 * data[offset + 1];
+          parameters[i] = sysex_value;
+        }
+        allPresets[bank] = { bankNumber: bank, parameters };
+      }
+      if (this.onAllPresetsReceived) {
+        this.onAllPresetsReceived(allPresets);
+      }
+    } else {
+      console.log(`>> Ignoring MIDI message with unexpected length: ${data.length}`);
+    }
   }
 
-  // Send parameter to device
   sendParameter(address, value) {
-    if (!this.device) return false;
+    if (!this.device) {
+      console.log(">> ERROR: Cannot send parameter, no device connected");
+      return false;
+    }
     const first_byte = parseInt(value % 128);
     const second_byte = parseInt(value / 128);
     const first_byte_address = parseInt(address % 128);
@@ -177,7 +182,6 @@ class MiniChordController {
     return true;
   }
 
-  // Fetch all presets
   async fetchAllPresets() {
     if (!this.device) {
       console.log(">> ERROR: Cannot fetch presets, no device connected");
@@ -189,61 +193,99 @@ class MiniChordController {
     return true;
   }
 
-  // Upload all presets
-  async uploadAllPresets(presets) {
-    if (!this.device) {
-      console.log(">> ERROR: Cannot upload presets, no device connected");
-      return false;
-    }
-    if (!Array.isArray(presets) || presets.length !== this.preset_number || !presets.every(p => p.parameters && p.parameters.length === this.parameter_size)) {
-      console.log(">> ERROR: Invalid preset data format");
-      return false;
-    }
-    const sysexData = presets.flatMap(preset =>
-      preset.parameters.flatMap(value => [
-        parseInt(value % 128),
-        parseInt(value / 128),
-      ])
-    );
-    const sysex_message = [0xF0, 0, 0, 5, ...sysexData, 0xF7];
-    this.device.send(sysex_message);
-    console.log(">> Sent uploadAllPresets command");
-    return true;
+uploadPreset(bank, parameters) {
+  if (!Array.isArray(parameters) || parameters.length !== 256) {
+    console.error(`Error: Invalid parameters for bank ${bank}, expected 256 parameters, got ${parameters?.length || 'undefined'}`);
+    return;
   }
+  const sysexData = new Uint8Array(516);
+  sysexData[0] = 0xF0; // SysEx start
+  sysexData[1] = 0;    // Address low
+  sysexData[2] = 0;    // Address high
+  sysexData[3] = 2;    // Command 2
+  sysexData[4] = bank; // Bank number (0–11)
+  for (let i = 0; i < 256; i++) {
+    const val = Math.max(0, Math.min(16383, Math.round(parameters[i] || 0)));
+    sysexData[5 + 2 * i] = val & 0x7F;       // LSB (7 bits)
+    sysexData[5 + 2 * i + 1] = (val >> 7) & 0x7F; // MSB (7 bits)
+  }
+  sysexData[515] = 0xF7; // SysEx end
+  this.device.send(sysexData);
+  console.log(`>> Sent uploadPreset command for bank ${bank} (${sysexData.length} bytes)`);
+}
 
-  // Reset memory
+async uploadAllPresets(presets) {
+  if (!Array.isArray(presets) || presets.length !== 12) {
+    console.error(`Error: Expected 12 presets, got ${presets?.length || 'undefined'}`);
+    return;
+  }
+  for (let bank = 0; bank < presets.length; bank++) {
+    const preset = presets[bank];
+    if (!preset || typeof preset.value !== 'string') {
+      console.error(`Error: Preset ${bank} must have a Base64 'value' string`);
+      continue;
+    }
+    // Decode Base64 to semicolon-separated string
+    let parameters;
+    try {
+      const numberString = atob(preset.value.replace(/[^A-Za-z0-9+/=]/g, ''));
+      parameters = numberString.split(';').map(num => parseInt(num, 10));
+      if (parameters.length !== 256) {
+        console.error(`Error: Preset ${bank} has ${parameters.length} parameters, expected 256`);
+        continue;
+      }
+      for (let i = 0; i < parameters.length; i++) {
+        if (isNaN(parameters[i]) || parameters[i] < 0 || parameters[i] > 16383) {
+          parameters[i] = 0;
+        }
+      }
+    } catch (error) {
+      console.error(`Error: Failed to decode Base64 for preset ${bank}: ${error.message}`);
+      continue;
+    }
+    this.uploadPreset(bank, parameters);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  console.log(">> Sent all presets sequentially");
+}
+
   resetMemory() {
-    if (!this.device) return false;
+    if (!this.device) {
+      console.log(">> ERROR: Cannot reset memory, no device connected");
+      return false;
+    }
     const sysex_message = [0xF0, 0, 0, 1, 0, 0xF7];
     this.device.send(sysex_message);
     console.log(">> Sent resetMemory command");
     return true;
   }
 
-  // Save current settings
   saveCurrentSettings(bankNumber) {
-    if (!this.device) return false;
+    if (!this.device) {
+      console.log(">> ERROR: Cannot save settings, no device connected");
+      return false;
+    }
     const sysex_message = [0xF0, 0, 0, 2, bankNumber, 0xF7];
     this.device.send(sysex_message);
     console.log(`>> Sent saveCurrentSettings command for bank ${bankNumber}`);
     return true;
   }
 
-  // Reset current bank
   resetCurrentBank() {
-    if (!this.device || this.active_bank_number === -1) return false;
+    if (!this.device || this.active_bank_number === -1) {
+      console.log(">> ERROR: Cannot reset bank, no device connected or no active bank");
+      return false;
+    }
     const sysex_message = [0xF0, 0, 0, 3, this.active_bank_number, 0xF7];
     this.device.send(sysex_message);
     console.log(`>> Sent resetCurrentBank command for bank ${this.active_bank_number}`);
     return true;
   }
 
-  // Check if device is connected
   isConnected() {
     return this.device !== false;
   }
 
-  // Get device info
   getDeviceInfo() {
     return {
       connected: this.isConnected(),
@@ -255,4 +297,5 @@ class MiniChordController {
     };
   }
 }
+
 export default MiniChordController;

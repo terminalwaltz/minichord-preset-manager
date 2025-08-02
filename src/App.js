@@ -74,7 +74,7 @@ function PresetManager() {
           title: prev.presets[index]?.title || `Preset ${index + 1}`,
           author: prev.presets[index]?.author || "",
           note: prev.presets[index]?.note || "",
-          values: preset.parameters,
+          values: preset.parameters.map((v) => Math.max(0, Math.min(32767, v))),
         })),
       }));
     };
@@ -148,7 +148,7 @@ function PresetManager() {
     }
   };
 
-  const handleBulkEdit = () => {
+  const handleBulkEdit = async () => {
     if (bulkEditAddress == null || bulkEditValue == null) {
       alert("Please enter a valid address (0-255) and value (0-32767)");
       return;
@@ -168,7 +168,17 @@ function PresetManager() {
         };
       });
       if (controller && controller.isConnected()) {
-        controller.uploadAllPresets(newPresets);
+        // Upload only selected presets sequentially
+        selected.forEach(async (index) => {
+          const preset = {
+            bankNumber: index,
+            parameters: newPresets[index].values.map((v) => Math.max(0, Math.min(32767, v))),
+          };
+          const success = await controller.uploadPreset(preset);
+          if (!success) {
+            alert(`Failed to upload preset ${index + 1}: no device connected or invalid data`);
+          }
+        });
       }
       return { presets: newPresets };
     });
@@ -190,7 +200,7 @@ function PresetManager() {
     e.preventDefault();
   };
 
-  const handleDrop = (index) => {
+  const handleDrop = async (index) => {
     if (draggedIndex === null || draggedIndex === index) return;
     const newPresets = [...presetState.presets];
     const [draggedPreset] = newPresets.splice(draggedIndex, 1);
@@ -199,11 +209,22 @@ function PresetManager() {
     setPresetState({ presets: newPresets });
     setDraggedIndex(null);
     if (controller && controller.isConnected()) {
-      controller.uploadAllPresets(newPresets);
+      // Upload all presets sequentially
+      for (let i = 0; i < newPresets.length; i++) {
+        const preset = {
+          bankNumber: i,
+          parameters: newPresets[i].values.map((v) => Math.max(0, Math.min(32767, v))),
+        };
+        const success = await controller.uploadPreset(preset);
+        if (!success) {
+          alert(`Failed to upload preset ${i + 1}: no device connected or invalid data`);
+          break;
+        }
+      }
     }
   };
 
-  const handleFileUpload = (event) => {
+  const handleFileUpload = async (event) => {
     console.log(">> File upload triggered");
     const file = event.target.files[0];
     if (!file) {
@@ -212,36 +233,54 @@ function PresetManager() {
     }
     console.log(">> Reading file:", file.name);
     const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        console.log(">> Parsing JSON");
-        const jsonData = JSON.parse(e.target.result);
-        if (validatePresetData(jsonData)) {
-          console.log(">> Valid preset data, updating state");
-          const newPresets = jsonData.presets.map((preset, index) => ({
-            id: index,
-            title: preset.name || `Preset ${index + 1}`,
-            author: preset.author || "",
-            note: preset.description || "",
-            values: atob(preset.value)
-              .split(";")
-              .map(Number)
-              .slice(0, 256),
-          }));
-          setPresetState({ presets: newPresets });
-          if (controller && controller.isConnected()) {
-            console.log(">> Sending SysEx for import");
-            controller.uploadAllPresets(newPresets);
+      reader.onload = async (event) => {
+        try {
+          const jsonData = JSON.parse(event.target.result);
+          if (!jsonData.presets || !Array.isArray(jsonData.presets) || jsonData.presets.length !== 12) {
+            console.error(`Error: JSON must contain a 'presets' array with exactly 12 entries, got ${jsonData.presets?.length || 0}`);
+            return;
           }
-        } else {
-          console.error(">> Invalid preset file format");
-          alert("Invalid preset file format");
+
+          for (let bank = 0; bank < jsonData.presets.length; bank++) {
+            const preset = jsonData.presets[bank];
+            if (!preset || typeof preset.value !== 'string') {
+              console.error(`Error: Preset ${bank} must have a Base64 'value' string, got ${typeof preset?.value}`);
+              continue;
+            }
+
+            // Decode Base64 to semicolon-separated string
+            let numberString;
+            try {
+              numberString = atob(preset.value.replace(/[^A-Za-z0-9+/=]/g, '')); // Remove invalid chars
+            } catch (error) {
+              console.error(`Error: Failed to decode Base64 for preset ${bank}: ${error.message}`);
+              continue;
+            }
+
+            // Split into array of numbers
+            const parameters = numberString.split(';').map(num => parseInt(num, 10));
+            if (parameters.length !== 256) {
+              console.error(`Error: Preset ${bank} has ${parameters.length} parameters, expected 256`);
+              continue;
+            }
+
+            // Validate parameters
+            for (let i = 0; i < parameters.length; i++) {
+              if (isNaN(parameters[i]) || parameters[i] < 0 || parameters[i] > 16383) {
+                console.warn(`Preset ${bank}, parameter ${i} has invalid value ${parameters[i]}, setting to 0`);
+                parameters[i] = 0;
+              }
+            }
+
+            controller.uploadPreset(bank, parameters);
+            console.log(`>> Queued uploadPreset for bank ${bank}`);
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          console.log(">> Sent all presets sequentially");
+        } catch (error) {
+          console.error("Error reading preset file:", error);
         }
-      } catch (error) {
-        console.error(">> Error reading preset file:", error);
-        alert("Error reading preset file");
-      }
-    };
+      };  
     reader.readAsText(file);
   };
 
