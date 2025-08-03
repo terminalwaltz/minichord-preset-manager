@@ -225,7 +225,7 @@ body {
 }
 
 .preset {
-  border: 4px solid black;
+  border: 3px solid black;
   background-color: hsl(var(--preset-hue, 0), 50%, 90%); /* Pastel background using hue from address 20 */
   padding: 10px;
   border-radius: 10px;
@@ -234,7 +234,7 @@ body {
 }
 
 .preset.selected {
-  background-color: hsl(var(--preset-hue, 0), 50%, 85%); /* Slightly darker pastel for selected */
+  background-color: hsl(var(--preset-hue, 0), 50%, 65%); /* Slightly darker pastel for selected */
 }
 
 .preset.active {
