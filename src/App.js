@@ -10,8 +10,8 @@ const validParameters = [
     name: param.name,
     displayName: `global::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
     data_type: param.data_type,
-    min_value: param.data_type === "bool" ? 0 : param.min_value, // Ensure bools allow 0
-    max_value: param.data_type === "bool" ? 1 : param.max_value, // Ensure bools max at 1
+    min_value: param.data_type === "bool" ? 0 : param.min_value,
+    max_value: param.data_type === "bool" ? 1 : param.max_value,
     tooltip: param.tooltip
   })),
   ...parametersData.harp_parameter.map(param => ({
@@ -55,11 +55,18 @@ function PresetManager() {
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [activeBank, setActiveBank] = useState(-1);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
+  const [isUploading, setIsUploading] = useState(false); // New state to prevent concurrent uploads
   const [bulkEdits, setBulkEdits] = useState([{ address: null, value: null }]);
 
   const getPresetColor = (preset) => {
     const hue = preset.values[20] || 0;
     return `hsl(${hue}, 100%, 50%)`;
+  };
+
+  // Consolidated success alert function
+  const showUploadSuccess = (message) => {
+    console.log(`>> Showing success alert: ${message}`);
+    alert(message);
   };
 
   const addBulkEdit = () => {
@@ -87,6 +94,11 @@ function PresetManager() {
 
   const handleBulkEdit = async () => {
     console.log(">> handleBulkEdit: bulkEdits=", JSON.stringify(bulkEdits));
+    if (isUploading) {
+      console.log(">> handleBulkEdit: Upload already in progress, skipping");
+      return;
+    }
+
     // Validate all bulk edits
     for (const edit of bulkEdits) {
       if (edit.address == null || edit.value == null) {
@@ -127,6 +139,7 @@ function PresetManager() {
       return;
     }
 
+    setIsUploading(true); // Lock uploads
     setPresetState((prev) => {
       const newPresets = [...prev.presets];
       const targetIndexes = selected.length > 0 ? selected : prev.presets.map((_, i) => i);
@@ -169,9 +182,10 @@ function PresetManager() {
           setIsLoadingPresets(true);
           const success = await controller.uploadAllPresets(presetsToUpload);
           setIsLoadingPresets(false);
+          setIsUploading(false); // Unlock uploads
           if (success) {
             console.log(">> Bulk edit upload successful");
-            alert("Bulk edit applied and uploaded successfully");
+            showUploadSuccess("Bulk edit applied and uploaded successfully");
             setBulkEdits([{ address: null, value: null }]);
           } else {
             console.error(">> Bulk edit upload failed");
@@ -179,6 +193,7 @@ function PresetManager() {
           }
         } catch (error) {
           setIsLoadingPresets(false);
+          setIsUploading(false); // Unlock uploads
           console.error(`>> Error uploading presets: ${error.message}`);
           alert(`Error uploading presets: ${error.message}`);
         }
@@ -320,6 +335,10 @@ function PresetManager() {
       alert("No device connected");
       return;
     }
+    if (isUploading) {
+      console.log(">> handleUploadOrder: Upload already in progress, skipping");
+      return;
+    }
 
     const presetsToUpload = presetState.presets.map((preset) => ({
       value: btoa(preset.values.join(';')),
@@ -330,52 +349,24 @@ function PresetManager() {
 
     console.log(">> Initiating preset order upload");
     try {
+      setIsUploading(true); // Lock uploads
       setIsLoadingPresets(true);
       const success = await controller.uploadAllPresets(presetsToUpload);
       setIsLoadingPresets(false);
+      setIsUploading(false); // Unlock uploads
       if (success) {
         console.log(">> Preset order upload successful");
-        alert("Preset order uploaded successfully");
+        showUploadSuccess("Preset order uploaded successfully");
       } else {
         console.error(">> Preset order upload failed");
         alert("Failed to upload preset order: device not connected or invalid data");
       }
     } catch (error) {
       setIsLoadingPresets(false);
+      setIsUploading(false); // Unlock uploads
       console.error(`>> Error uploading preset order: ${error.message}`);
       alert(`Error uploading preset order: ${error.message}`);
     }
-  };
-
-  const handlePresetSelect = (index) => {
-    setSelected((prev) =>
-      prev.includes(index)
-        ? prev.filter((i) => i !== index)
-        : [...prev, index]
-    );
-  };
-
-  const handleDragStart = (index) => {
-    setDraggedIndex(index);
-  };
-
-  const handleDragOver = (e, index) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (index) => {
-    if (draggedIndex === null || draggedIndex === index) return;
-
-    setPresetState((prev) => {
-      const newPresets = [...prev.presets];
-      const [draggedPreset] = newPresets.splice(draggedIndex, 1);
-      newPresets.splice(index, 0, draggedPreset);
-      newPresets.forEach((preset, i) => (preset.id = i));
-      console.log(`>> Reordered presets: ${newPresets.map(p => p.id).join(',')}`);
-      return { presets: newPresets };
-    });
-
-    setDraggedIndex(null);
   };
 
   const handleFileUpload = async (event) => {
@@ -383,6 +374,10 @@ function PresetManager() {
     if (!controller || !controller.isConnected()) {
       console.error("Error: Controller not initialized or not connected");
       alert("No device connected");
+      return;
+    }
+    if (isUploading) {
+      console.log(">> handleFileUpload: Upload already in progress, skipping");
       return;
     }
     const fileInput = event.target;
@@ -416,7 +411,7 @@ function PresetManager() {
         const validPresets = [];
         const newPresetState = jsonData.presets.map((preset, index) => {
           console.log(`>> Processing preset ${index}`);
-          let parameters = new Array(256).fill(0); // Default to zeros
+          let parameters = new Array(256).fill(0);
           let base64Value = preset?.value || "";
           let presetName = preset?.name || `Preset ${index + 1}`;
           let presetAuthor = preset?.author || "";
@@ -474,15 +469,21 @@ function PresetManager() {
 
         try {
           console.log(">> Calling uploadAllPresets with", validPresets.length, "valid presets");
+          setIsUploading(true); // Lock uploads
+          setIsLoadingPresets(true);
           const success = await controller.uploadAllPresets(validPresets);
+          setIsLoadingPresets(false);
+          setIsUploading(false); // Unlock uploads
           if (success) {
-            console.log(">> Finished uploadAllPresets");
-            alert("Presets uploaded successfully");
+            console.log(">> File upload successful");
+            showUploadSuccess("Presets uploaded successfully");
           } else {
             console.error("Error: uploadAllPresets failed");
             alert("Failed to upload presets: Device not connected or invalid data");
           }
         } catch (error) {
+          setIsLoadingPresets(false);
+          setIsUploading(false); // Unlock uploads
           console.error(`Error: Failed to upload presets: ${error.message}`);
           alert(`Error uploading presets: ${error.message}`);
         }
@@ -535,6 +536,37 @@ function PresetManager() {
         })),
       });
     }
+  };
+
+  const handlePresetSelect = (index) => {
+    setSelected((prev) =>
+      prev.includes(index)
+        ? prev.filter((i) => i !== index)
+        : [...prev, index]
+    );
+  };
+
+  const handleDragStart = (index) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (index) => {
+    if (draggedIndex === null || draggedIndex === index) return;
+
+    setPresetState((prev) => {
+      const newPresets = [...prev.presets];
+      const [draggedPreset] = newPresets.splice(draggedIndex, 1);
+      newPresets.splice(index, 0, draggedPreset);
+      newPresets.forEach((preset, i) => (preset.id = i));
+      console.log(`>> Reordered presets: ${newPresets.map(p => p.id).join(',')}`);
+      return { presets: newPresets };
+    });
+
+    setDraggedIndex(null);
   };
 
   const handlePresetChange = (index, field, value) => {
@@ -594,7 +626,7 @@ function PresetManager() {
           </button>
           <button
             onClick={handleUploadOrder}
-            disabled={!controller?.isConnected()}
+            disabled={!controller?.isConnected() || isUploading}
           >
             Upload Order
           </button>
@@ -617,7 +649,7 @@ function PresetManager() {
                 </select>
                 {validParameters.find((p) => p.address === edit.address)?.data_type === "bool" ? (
                   <select
-                    key={`bool-select-${edit.address}`} // Force re-render when address changes
+                    key={`bool-select-${edit.address}`}
                     value={edit.value ?? ""}
                     onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
                     className="bool-select"
@@ -674,7 +706,7 @@ function PresetManager() {
             </span>
             <button
               onClick={handleBulkEdit}
-              disabled={!controller?.isConnected()}
+              disabled={!controller?.isConnected() || isUploading}
             >
               Apply to {selected.length > 0 ? "Selected" : "All"}
             </button>
