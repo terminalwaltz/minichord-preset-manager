@@ -204,25 +204,38 @@ class MiniChordController {
     }
   }
 
-  sendParameter(address, value) {
-    if (!this.device) {
-      console.error(">> ERROR: Cannot send parameter, no device connected");
-      return false;
-    }
-    const first_byte = parseInt(value % 128);
-    const second_byte = parseInt(value / 128);
-    const first_byte_address = parseInt(address % 128);
-    const second_byte_address = parseInt(address / 128);
-    const sysex_message = [0xF0, first_byte_address, second_byte_address, first_byte, second_byte, 0xF7];
+sendParameter(address, value) {
+  if (!this.device) {
+    console.error(">> ERROR: Cannot send parameter, no device connected");
+    return false;
+  }
+  // Special case: Request current bank data (triggers case 5 in firmware)
+  if (address === 0 && value === 0) {
+    const sysex_message = [0xF0, 0x00, 0x00, 0x05, 0x00, 0xF7];
     try {
       this.device.send(sysex_message);
-      console.log(`>> Sent parameter: address=${address}, value=${value}`);
+      console.log(">> Sent current bank request (case 5)");
       return true;
     } catch (error) {
-      console.error(`>> ERROR: Failed to send parameter: ${error.message}`);
+      console.error(`>> ERROR: Failed to send current bank request: ${error.message}`);
       return false;
     }
   }
+  // Standard parameter update
+  const first_byte = parseInt(value % 128);
+  const second_byte = parseInt(value / 128);
+  const first_byte_address = parseInt(address % 128);
+  const second_byte_address = parseInt(address / 128);
+  const sysex_message = [0xF0, first_byte_address, second_byte_address, first_byte, second_byte, 0xF7];
+  try {
+    this.device.send(sysex_message);
+    console.log(`>> Sent parameter: address=${address}, value=${value}`);
+    return true;
+  } catch (error) {
+    console.error(`>> ERROR: Failed to send parameter: ${error.message}`);
+    return false;
+  }
+}
 
   async fetchAllPresets() {
     if (!this.device) {
