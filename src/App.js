@@ -33,7 +33,7 @@ const validParameters = [
     tooltip: param.tooltip
   }))
 ]
-  .filter(param => param.address >= 21 && param.address <= 219)
+  .filter(param => param.address >= 10 && param.address <= 219)
   .sort((a, b) => a.address - b.address);
 
 function PresetManager() {
@@ -93,8 +93,8 @@ function PresetManager() {
         alert("Please select a parameter and value for all fields");
         return;
       }
-      if (edit.address < 21 || edit.address > 219) {
-        alert(`Parameter address ${edit.address} must be between 21 and 219`);
+      if (edit.address < 10 || edit.address > 219) {
+        alert(`Parameter address ${edit.address} must be between 10 and 219`);
         return;
       }
       const param = validParameters.find((p) => p.address === edit.address);
