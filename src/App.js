@@ -55,7 +55,7 @@ function PresetManager() {
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [activeBank, setActiveBank] = useState(-1);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
-  const [isUploading, setIsUploading] = useState(false); // New state to prevent concurrent uploads
+  const [isUploading, setIsUploading] = useState(false);
   const [bulkEdits, setBulkEdits] = useState([{ address: null, value: null }]);
 
   const getPresetColor = (preset) => {
@@ -63,7 +63,6 @@ function PresetManager() {
     return `hsl(${hue}, 100%, 50%)`;
   };
 
-  // Consolidated success alert function
   const showUploadSuccess = (message) => {
     console.log(`>> Showing success alert: ${message}`);
     alert(message);
@@ -99,7 +98,6 @@ function PresetManager() {
       return;
     }
 
-    // Validate all bulk edits
     for (const edit of bulkEdits) {
       if (edit.address == null || edit.value == null) {
         alert("Please select a parameter and value for all fields");
@@ -139,7 +137,7 @@ function PresetManager() {
       return;
     }
 
-    setIsUploading(true); // Lock uploads
+    setIsUploading(true);
     setPresetState((prev) => {
       const newPresets = [...prev.presets];
       const targetIndexes = selected.length > 0 ? selected : prev.presets.map((_, i) => i);
@@ -182,7 +180,7 @@ function PresetManager() {
           setIsLoadingPresets(true);
           const success = await controller.uploadAllPresets(presetsToUpload);
           setIsLoadingPresets(false);
-          setIsUploading(false); // Unlock uploads
+          setIsUploading(false);
           if (success) {
             console.log(">> Bulk edit upload successful");
             showUploadSuccess("Bulk edit applied and uploaded successfully");
@@ -193,7 +191,7 @@ function PresetManager() {
           }
         } catch (error) {
           setIsLoadingPresets(false);
-          setIsUploading(false); // Unlock uploads
+          setIsUploading(false);
           console.error(`>> Error uploading presets: ${error.message}`);
           alert(`Error uploading presets: ${error.message}`);
         }
@@ -349,11 +347,11 @@ function PresetManager() {
 
     console.log(">> Initiating preset order upload");
     try {
-      setIsUploading(true); // Lock uploads
+      setIsUploading(true);
       setIsLoadingPresets(true);
       const success = await controller.uploadAllPresets(presetsToUpload);
       setIsLoadingPresets(false);
-      setIsUploading(false); // Unlock uploads
+      setIsUploading(false);
       if (success) {
         console.log(">> Preset order upload successful");
         showUploadSuccess("Preset order uploaded successfully");
@@ -363,7 +361,7 @@ function PresetManager() {
       }
     } catch (error) {
       setIsLoadingPresets(false);
-      setIsUploading(false); // Unlock uploads
+      setIsUploading(false);
       console.error(`>> Error uploading preset order: ${error.message}`);
       alert(`Error uploading preset order: ${error.message}`);
     }
@@ -469,11 +467,11 @@ function PresetManager() {
 
         try {
           console.log(">> Calling uploadAllPresets with", validPresets.length, "valid presets");
-          setIsUploading(true); // Lock uploads
+          setIsUploading(true);
           setIsLoadingPresets(true);
           const success = await controller.uploadAllPresets(validPresets);
           setIsLoadingPresets(false);
-          setIsUploading(false); // Unlock uploads
+          setIsUploading(false);
           if (success) {
             console.log(">> File upload successful");
             showUploadSuccess("Presets uploaded successfully");
@@ -483,7 +481,7 @@ function PresetManager() {
           }
         } catch (error) {
           setIsLoadingPresets(false);
-          setIsUploading(false); // Unlock uploads
+          setIsUploading(false);
           console.error(`Error: Failed to upload presets: ${error.message}`);
           alert(`Error uploading presets: ${error.message}`);
         }
@@ -720,7 +718,10 @@ function PresetManager() {
             className={`preset ${selected.includes(index) ? "selected" : ""} ${
               activeBank === index ? "active" : ""
             }`}
-            style={{ borderColor: getPresetColor(preset) }}
+            style={{
+              borderColor: getPresetColor(preset),
+              '--preset-hue': preset.values[20] || 0 // Pass hue as CSS custom property
+            }}
             draggable
             onDragStart={(e) => {
               e.stopPropagation();
