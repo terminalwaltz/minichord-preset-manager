@@ -46,14 +46,6 @@ function PresetManager() {
       values: new Array(256).fill(0),
     })),
   });
-  const [presetMetadata, setPresetMetadata] = useState(
-    Array.from({ length: 12 }, (_, id) => ({
-      id,
-      title: `Preset ${id + 1}`,
-      author: "",
-      note: "",
-    }))
-  ); // New state for metadata
   const [selected, setSelected] = useState([]);
   const [controller, setController] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState({
@@ -250,21 +242,13 @@ function PresetManager() {
       console.log("All presets received:", allPresets);
       setIsLoadingPresets(false);
       setPresetState((prev) => ({
-        presets: allPresets.map((preset, index) => {
-          const metadata = presetMetadata[index] || {
-            id: index,
-            title: `Preset ${index + 1}`,
-            author: "",
-            note: "",
-          };
-          return {
-            id: index,
-            title: metadata.title,
-            author: metadata.author,
-            note: metadata.note,
-            values: preset.parameters.map((v) => Math.max(0, Math.min(32767, v))),
-          };
-        }),
+        presets: allPresets.map((preset, index) => ({
+          id: index,
+          title: prev.presets[index]?.title || `Preset ${index + 1}`,
+          author: prev.presets[index]?.author || "",
+          note: prev.presets[index]?.note || "",
+          values: preset.parameters.map((v) => Math.max(0, Math.min(32767, v))),
+        })),
       }));
     };
     ctrl.initialize().then((success) => {
@@ -315,7 +299,7 @@ function PresetManager() {
       ctrl.onDataReceived = null;
       ctrl.onAllPresetsReceived = null;
     };
-  }, [presetMetadata]); // Add presetMetadata to dependencies
+  }, []);
 
   const handleFetchAllPresets = () => {
     if (controller && controller.isConnected()) {
@@ -392,6 +376,14 @@ function PresetManager() {
     }
     if (isUploading) {
       console.log(">> handleFileUpload: Upload already in progress, skipping");
+      return;
+    }
+    const confirmed = window.confirm(
+      "This action will overwrite your current presets, make sure to export a JSON backup if necessary. Are you sure?"
+    );
+    if (!confirmed) {
+      console.log(">> File upload cancelled by user");
+      event.target.value = ''; // Reset file input
       return;
     }
     const fileInput = event.target;
@@ -473,21 +465,11 @@ function PresetManager() {
           };
         });
 
-        // Update presetMetadata with imported metadata
-        setPresetMetadata(
-          newPresetState.map((preset, index) => ({
-            id: index,
-            title: preset.title,
-            author: preset.author,
-            note: preset.note,
-          }))
-        );
-
         setPresetState({ presets: newPresetState });
         console.log(">> Valid presets count:", validPresets.length);
         if (validPresets.length === 0) {
           console.error("Error: No valid presets to upload");
-          alert("No valid presets to upload");
+          alert("No file selected");
           return;
         }
 
@@ -524,10 +506,11 @@ function PresetManager() {
     fileInput.value = '';
   };
 
+
   const handleSavePresets = () => {
     console.log(">> Saving presets to JSON");
     const jsonData = {
-      presets: presetState.presets.map((preset, index) => ({
+      presets: presetState.presets.map(preset => ({
         name: preset.title,
         author: preset.author,
         description: preset.note,
@@ -548,18 +531,19 @@ function PresetManager() {
   };
 
   const handleResetMemory = () => {
-    if (controller && controller.isConnected()) {
-      controller.resetMemory();
-      setPresetState({
-        presets: Array.from({ length: 12 }, (_, id) => ({
-          id,
-          title: presetMetadata[id]?.title || `Preset ${id + 1}`,
-          author: presetMetadata[id]?.author || "",
-          note: presetMetadata[id]?.note || "",
-          values: new Array(256).fill(0),
-        })),
-      });
+    if (!controller || !controller.isConnected()) {
+      console.error(">> No device connected for reset memory");
+      alert("No device connected");
+      return;
     }
+    const confirmed = window.confirm(
+      "This action will reset your banks to factory presets, are you sure?"
+    );
+    if (!confirmed) {
+      console.log(">> Reset memory cancelled by user");
+      return;
+    }
+    controller.resetMemory();
   };
 
   const handlePresetSelect = (index) => {
@@ -586,16 +570,6 @@ function PresetManager() {
       const [draggedPreset] = newPresets.splice(draggedIndex, 1);
       newPresets.splice(index, 0, draggedPreset);
       newPresets.forEach((preset, i) => (preset.id = i));
-
-      // Update presetMetadata to reflect new order
-      setPresetMetadata((prevMetadata) => {
-        const newMetadata = [...prevMetadata];
-        const [draggedMetadata] = newMetadata.splice(draggedIndex, 1);
-        newMetadata.splice(index, 0, draggedMetadata);
-        newMetadata.forEach((meta, i) => (meta.id = i));
-        return newMetadata;
-      });
-
       console.log(`>> Reordered presets: ${newPresets.map(p => p.id).join(',')}`);
       return { presets: newPresets };
     });
@@ -609,12 +583,6 @@ function PresetManager() {
       newPresets[index] = { ...newPresets[index], [field]: value };
       return { presets: newPresets };
     });
-    // Update presetMetadata
-    setPresetMetadata((prev) =>
-      prev.map((meta, i) =>
-        i === index ? { ...meta, [field]: value } : meta
-      )
-    );
   };
 
   return (
@@ -762,7 +730,7 @@ function PresetManager() {
             }`}
             style={{
               borderColor: getPresetColor(preset),
-              '--preset-hue': preset.values[20] || 0
+              '--preset-hue': preset.values[20] || 0 // Pass hue as CSS custom property
             }}
             draggable
             onDragStart={(e) => {
