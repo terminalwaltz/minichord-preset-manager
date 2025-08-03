@@ -20,6 +20,7 @@ class MiniChordController {
     this.onDataReceived = null;
     this.onAllPresetsReceived = null;
     this.json_reference = "../json/minichord.json";
+    this.sysexBuffer = []; // Buffer for accumulating SysEx chunks
   }
 
   async initialize() {
@@ -112,63 +113,94 @@ class MiniChordController {
   }
 
   processCurrentData(midiMessage) {
-    if (midiMessage.data[0] !== 0xF0 || midiMessage.data[midiMessage.data.length - 1] !== 0xF7) {
-      console.log(">> Ignoring invalid SysEx message (missing F0 or F7)");
+    const data = midiMessage.data;
+    // Accumulate SysEx chunks
+    if (data[0] === 0xF0) {
+      this.sysexBuffer = [...data];
+      console.log(">> Started SysEx message, length:", data.length);
+    } else if (this.sysexBuffer.length > 0) {
+      this.sysexBuffer = [...this.sysexBuffer, ...data];
+      console.log(">> Appended SysEx chunk, total length:", this.sysexBuffer.length);
+    } else {
+      console.log(">> Ignoring non-SysEx message or invalid continuation");
       return;
     }
-    const data = midiMessage.data.slice(1, -1);
-    const expectedSinglePresetLength = this.parameter_size * 2;
-    const expectedAllPresetsLength = this.preset_number * this.parameter_size * 2;
 
-    if (data.length === expectedSinglePresetLength) {
-      console.log(">> Processing single preset data");
-      const processedData = {
-        parameters: [],
-        rhythmData: [],
-        bankNumber: data[2 * 1],
-        firmwareVersion: 0,
-      };
+    // Check for complete SysEx message
+    if (this.sysexBuffer.length > 0 && this.sysexBuffer[this.sysexBuffer.length - 1] === 0xF7) {
+      console.log(">> Complete SysEx message received, length:", this.sysexBuffer.length);
+      // Verify header: F0 00 00 cmd bank
+      if (
+        this.sysexBuffer.length >= 6 &&
+        this.sysexBuffer[0] === 0xF0 &&
+        this.sysexBuffer[1] === 0x00 &&
+        this.sysexBuffer[2] === 0x00
+      ) {
+        const command = this.sysexBuffer[3];
+        const bank = this.sysexBuffer[4];
+        const expectedSinglePresetLength = 516; // F0 00 00 02 bank 512_bytes F7
+        const expectedAllPresetsLength = 6146; // F0 00 00 04 00 6144_bytes F7
 
-      for (let i = 0; i < this.parameter_size; i++) {
-        const sysex_value = data[2 * i] + 128 * data[2 * i + 1];
-        if (i === this.firmware_adress) {
-          processedData.firmwareVersion = sysex_value / this.float_multiplier;
-          if (processedData.firmwareVersion < this.min_firmware_accepted) {
-            alert("Please update the minichord firmware");
+        if (command === 0x02 && this.sysexBuffer.length === expectedSinglePresetLength) {
+          console.log(">> Processing single preset data");
+          const processedData = {
+            parameters: [],
+            rhythmData: [],
+            bankNumber: bank,
+            firmwareVersion: 0,
+          };
+
+          // Extract 256 parameters from bytes 5 to 516 (512 bytes)
+          for (let i = 0; i < this.parameter_size; i++) {
+            const offset = 5 + 2 * i;
+            const sysex_value = this.sysexBuffer[offset] + (this.sysexBuffer[offset + 1] << 7);
+            if (i === this.firmware_adress) {
+              processedData.firmwareVersion = sysex_value / this.float_multiplier;
+              if (processedData.firmwareVersion < this.min_firmware_accepted) {
+                alert("Please update the minichord firmware");
+              }
+            } else if (i >= this.base_adress_rythm && i < this.base_adress_rythm + 16) {
+              const j = i - this.base_adress_rythm;
+              const rhythmBits = [];
+              for (let k = 0; k < 7; k++) {
+                rhythmBits[k] = !!(sysex_value & (1 << k));
+              }
+              processedData.rhythmData[j] = rhythmBits;
+            } else {
+              processedData.parameters[i] = sysex_value;
+            }
           }
-        } else if (i >= this.base_adress_rythm && i < this.base_adress_rythm + 16) {
-          const j = i - this.base_adress_rythm;
-          const rhythmBits = [];
-          for (let k = 0; k < 7; k++) {
-            rhythmBits[k] = !!(sysex_value & (1 << k));
+
+          this.active_bank_number = processedData.bankNumber;
+          console.log(`>> Processed single preset for bank ${bank}, first 5 parameters:`, processedData.parameters.slice(0, 5));
+          if (this.onDataReceived) {
+            this.onDataReceived(processedData);
           }
-          processedData.rhythmData[j] = rhythmBits;
+        } else if (command === 0x04 && this.sysexBuffer.length === expectedAllPresetsLength) {
+          console.log(`>> Processing all presets data (${this.sysexBuffer.length} bytes)`);
+          const allPresets = [];
+          for (let bank = 0; bank < this.preset_number; bank++) {
+            const parameters = [];
+            for (let i = 0; i < this.parameter_size; i++) {
+              const offset = 5 + bank * this.parameter_size * 2 + 2 * i;
+              const sysex_value = this.sysexBuffer[offset] + (this.sysexBuffer[offset + 1] << 7);
+              parameters[i] = sysex_value;
+            }
+            allPresets[bank] = { bankNumber: bank, parameters };
+          }
+          if (this.onAllPresetsReceived) {
+            this.onAllPresetsReceived(allPresets);
+          }
         } else {
-          processedData.parameters[i] = sysex_value;
+          console.log(`>> Ignoring SysEx message with unexpected command ${command} or length: ${this.sysexBuffer.length}`);
         }
+      } else {
+        console.log(">> Ignoring invalid SysEx message (incorrect header)");
       }
-
-      this.active_bank_number = processedData.bankNumber;
-      if (this.onDataReceived) {
-        this.onDataReceived(processedData);
-      }
-    } else if (data.length === expectedAllPresetsLength) {
-      console.log(`>> Processing all presets data (${data.length} bytes)`);
-      const allPresets = [];
-      for (let bank = 0; bank < this.preset_number; bank++) {
-        const parameters = [];
-        for (let i = 0; i < this.parameter_size; i++) {
-          const offset = bank * this.parameter_size * 2 + 2 * i;
-          const sysex_value = data[offset] + 128 * data[offset + 1];
-          parameters[i] = sysex_value;
-        }
-        allPresets[bank] = { bankNumber: bank, parameters };
-      }
-      if (this.onAllPresetsReceived) {
-        this.onAllPresetsReceived(allPresets);
-      }
-    } else {
-      console.log(`>> Ignoring MIDI message with unexpected length: ${data.length}`);
+      this.sysexBuffer = []; // Reset buffer
+    } else if (this.sysexBuffer.length > 6146) {
+      console.log(">> SysEx buffer overflow, resetting");
+      this.sysexBuffer = [];
     }
   }
 
@@ -208,92 +240,104 @@ class MiniChordController {
     }
   }
 
-uploadPreset(bank, parameters) {
-  if (!this.device) {
-    console.error(">> ERROR: Cannot send preset, no device connected");
-    return false;
-  }
-  if (!Array.isArray(parameters) || parameters.length !== 256) {
-    console.error(`Error: Expected 256 parameters for bank ${bank}, got ${parameters?.length || 'undefined'}`);
-    return false;
-  }
-  console.log(`>> Building SysEx for bank ${bank}, parameter count: ${parameters.length}`);
-  const sysex_message = new Uint8Array(516);
-  sysex_message[0] = 0xF0; // SysEx start
-  sysex_message[1] = 0;    // Address low
-  sysex_message[2] = 0;    // Address high
-  sysex_message[3] = 2;    // Command 2 (bulk upload)
-  sysex_message[4] = bank; // Bank number (0–11)
-  for (let i = 0; i < 256; i++) {
-    const value = Math.max(0, Math.min(16383, parameters[i] || 0)); // Clamp to 0–16383
-    sysex_message[5 + 2 * i] = value % 128;      // LSB
-    sysex_message[5 + 2 * i + 1] = Math.floor(value / 128); // MSB
-  }
-  sysex_message[515] = 0xF7; // SysEx end
-  console.log(`>> SysEx message length: ${sysex_message.length}`);
-  console.log(`>> First 10 bytes:`, 
-              Array.from(sysex_message.slice(0, 10)).map(b => `0x${b.toString(16).padStart(2, '0')}`));
-  console.log(`>> Last 5 bytes:`, 
-              Array.from(sysex_message.slice(-5)).map(b => `0x${b.toString(16).padStart(2, '0')}`));
-  try {
-    this.device.send(sysex_message);
-    console.log(`>> SysEx sent successfully for bank ${bank}`);
-    return true;
-  } catch (error) {
-    console.error(`>> ERROR: Failed to send SysEx for bank ${bank}: ${error.message}`);
-    return false;
-  }
-}
-
-async uploadAllPresets(presets) {
-  if (!this.device) {
-    console.error(">> ERROR: Cannot send presets, no device connected");
-    return false;
-  }
-  if (!Array.isArray(presets) || presets.length === 0) {
-    console.error(`Error: Expected non-empty presets array, got ${presets?.length || 'undefined'}`);
-    return false;
-  }
-  console.log(">> Starting uploadAllPresets with", presets.length, "presets");
-  let success = true;
-  for (let bank = 0; bank < Math.min(this.preset_number, presets.length); bank++) {
-    const preset = presets[bank];
-    if (!preset || !preset.value || typeof preset.value !== 'string') {
-      console.warn(`>> Skipping preset ${bank}: Missing or invalid 'value' field`);
-      continue;
+  async uploadPreset(bank, parameters) {
+    if (!this.device) {
+      console.error(">> ERROR: No device connected");
+      return false;
     }
-    console.log(`>> Processing preset ${bank}`);
-    let parameters;
+    if (!Array.isArray(parameters) || parameters.length !== 256) {
+      console.error(`>> ERROR: Invalid parameters array, got length ${parameters?.length || 'undefined'}`);
+      return false;
+    }
+
+    console.log(`>> Uploading preset for bank ${bank}`);
+    // Construct 516-byte SysEx: F0 00 00 02 bank 512_bytes F7
+    const sysex = new Uint8Array(516);
+    sysex[0] = 0xF0; // SysEx start
+    sysex[1] = 0x00; // Manufacturer ID (simplified)
+    sysex[2] = 0x00;
+    sysex[3] = 0x02; // Command: bulk preset upload
+    sysex[4] = bank; // Bank number (0–11)
+
+    // Pack 256 parameters as 512 bytes (2 bytes per parameter, LSB-first)
+    for (let i = 0; i < 256; i++) {
+      const value = Math.max(0, Math.min(16383, parameters[i]));
+      sysex[5 + 2 * i] = value & 0x7F; // LSB
+      sysex[5 + 2 * i + 1] = (value >> 7) & 0x7F; // MSB
+    }
+    sysex[515] = 0xF7; // SysEx end
+
+    // Log first and last few bytes for debugging
+    console.log(`>> SysEx message for bank ${bank}, first 10 bytes:`, Array.from(sysex.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+    console.log(`>> SysEx message for bank ${bank}, last 10 bytes:`, Array.from(sysex.slice(506, 516)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+
     try {
-      const numberString = atob(preset.value.replace(/[^A-Za-z0-9+/=]/g, '')).replace(/;+$/, '');
-      console.log(`>> Decoded string length for preset ${bank}: ${numberString.length}`);
-      parameters = numberString.split(';').map(num => {
-        const value = parseInt(num, 10);
-        return isNaN(value) || value < 0 || value > 16383 ? 0 : value;
-      });
-      if (parameters.length !== 256) {
-        console.warn(`Warning: Preset ${bank} has ${parameters.length} parameters, expected 256. Padding with zeros.`);
-        while (parameters.length < 256) {
-          parameters.push(0);
-        }
-      }
-      const successUpload = await this.uploadPreset(bank, parameters);
-      if (!successUpload) {
-        console.error(`Error: Failed to upload preset ${bank}`);
-        success = false;
-      } else {
-        console.log(`>> Successfully uploaded preset ${bank}`);
-      }
-      await new Promise(resolve => setTimeout(resolve, 100)); // Match firmware's delay(100)
+      await this.device.send(sysex);
+      console.log(`>> Successfully sent SysEx for bank ${bank}`);
+      return true;
     } catch (error) {
-      console.error(`Error: Failed to process preset ${bank}: ${error.message}`);
-      success = false;
+      console.error(`>> ERROR: Failed to send SysEx for bank ${bank}: ${error.message}`);
+      return false;
     }
   }
-  console.log(`>> uploadAllPresets completed, success: ${success}`);
-  return success;
-}
 
+  async uploadAllPresets(presets) {
+    if (!this.device) {
+      console.error(">> ERROR: Cannot send presets, no device connected");
+      return false;
+    }
+    if (!Array.isArray(presets) || presets.length === 0) {
+      console.error(`Error: Expected non-empty presets array, got ${presets?.length || 'undefined'}`);
+      return false;
+    }
+    console.log(">> Starting uploadAllPresets with", presets.length, "presets");
+    let success = true;
+    for (let bank = 0; bank < Math.min(this.preset_number, presets.length); bank++) {
+      const preset = presets[bank];
+      if (!preset || !preset.value || typeof preset.value !== 'string') {
+        console.warn(`>> Skipping preset ${bank}: Missing or invalid 'value' field`);
+        continue;
+      }
+      console.log(`>> Processing preset ${bank}`);
+      let parameters;
+      try {
+        // Decode base64 and remove any trailing semicolons
+        const decodedString = atob(preset.value.replace(/[^A-Za-z0-9+/=]/g, '')).replace(/;+$/, '');
+        console.log(`>> Raw preset.value for bank ${bank}:`, preset.value);
+        console.log(`>> Decoded string for preset ${bank}:`, decodedString);
+        console.log(`>> Decoded string length for preset ${bank}:`, decodedString.length);
+
+        // Split into parameters using semicolons
+        parameters = decodedString.split(';').map(num => {
+          const value = parseInt(num, 10);
+          return isNaN(value) || value < 0 || value > 16383 ? 0 : value;
+        });
+
+        if (parameters.length !== 256) {
+          console.error(`>> Error: Preset ${bank} has ${parameters.length} parameters, expected 256. Skipping.`);
+          success = false;
+          continue;
+        }
+
+        // Log first few parameters for debugging
+        console.log(`>> First 5 parameters for preset ${bank}:`, parameters.slice(0, 5));
+
+        const successUpload = await this.uploadPreset(bank, parameters);
+        if (!successUpload) {
+          console.error(`>> Error: Failed to upload preset ${bank}`);
+          success = false;
+        } else {
+          console.log(`>> Successfully uploaded preset ${bank}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 100)); // Match firmware delay
+      } catch (error) {
+        console.error(`>> Error: Failed to process preset ${bank}: ${error.message}`);
+        success = false;
+      }
+    }
+    console.log(`>> uploadAllPresets completed, success: ${success}`);
+    return success;
+  }
 
   resetMemory() {
     if (!this.device) {
