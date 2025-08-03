@@ -22,11 +22,11 @@ body {
   border-radius: 1em;
   border-width: 2px;
   margin-bottom: 1em;
-  padding: 8px 12px;
+  padding: 1px;
   display: flex;
   align-items: center;
   font-size: 0.9em;
-  max-width: 300px;
+  max-width: 270px;
   margin-top: 1em
 }
 
