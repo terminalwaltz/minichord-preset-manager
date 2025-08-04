@@ -112,97 +112,157 @@ class MiniChordController {
     }
   }
 
-  processCurrentData(midiMessage) {
-    const data = midiMessage.data;
-    // Accumulate SysEx chunks
-    if (data[0] === 0xF0) {
-      this.sysexBuffer = [...data];
-      console.log(">> Started SysEx message, length:", data.length);
-    } else if (this.sysexBuffer.length > 0) {
-      this.sysexBuffer = [...this.sysexBuffer, ...data];
-      console.log(">> Appended SysEx chunk, total length:", this.sysexBuffer.length);
-    } else {
-      console.log(">> Ignoring non-SysEx message or invalid continuation");
+processCurrentData(midiMessage) {
+  const data = midiMessage.data;
+  // Accumulate SysEx chunks
+  if (data[0] === 0xF0) {
+    this.sysexBuffer = [...data];
+    console.log(">> Started SysEx message, length:", data.length);
+  } else if (this.sysexBuffer.length > 0) {
+    this.sysexBuffer = [...this.sysexBuffer, ...data];
+    console.log(">> Appended SysEx chunk, total length:", this.sysexBuffer.length);
+  } else {
+    console.log(">> Ignoring non-SysEx message or invalid continuation");
+    return;
+  }
+
+  // Check for complete SysEx message
+  if (this.sysexBuffer.length > 0 && this.sysexBuffer[this.sysexBuffer.length - 1] === 0xF7) {
+    console.log(">> Complete SysEx message received, length:", this.sysexBuffer.length);
+
+    const expectedSinglePresetLength = 516; // F0 00 00 02 bank 512_bytes F7
+    const expectedLegacyPresetLength = 514; // F0 512_bytes F7
+    const expectedAllPresetsLength = 6146; // F0 00 00 04 00 6144_bytes F7
+
+    // Check if it's a valid SysEx message
+    if (this.sysexBuffer.length < 6 || this.sysexBuffer[0] !== 0xF0) {
+      console.log(">> Ignoring invalid SysEx message (incorrect format or too short), first 10 bytes:", 
+        this.sysexBuffer.slice(0, 10).map(b => b.toString(16).padStart(2, '0')).join(' '));
+      this.sysexBuffer = [];
       return;
     }
 
-    // Check for complete SysEx message
-    if (this.sysexBuffer.length > 0 && this.sysexBuffer[this.sysexBuffer.length - 1] === 0xF7) {
-      console.log(">> Complete SysEx message received, length:", this.sysexBuffer.length);
-      // Verify header: F0 00 00 cmd bank
-      if (
-        this.sysexBuffer.length >= 6 &&
-        this.sysexBuffer[0] === 0xF0 &&
-        this.sysexBuffer[1] === 0x00 &&
-        this.sysexBuffer[2] === 0x00
-      ) {
-        const command = this.sysexBuffer[3];
-        const bank = this.sysexBuffer[4];
-        const expectedSinglePresetLength = 516; // F0 00 00 02 bank 512_bytes F7
-        const expectedAllPresetsLength = 6146; // F0 00 00 04 00 6144_bytes F7
+    // Handle legacy messages (514 bytes, command 0x00)
+    if (this.sysexBuffer.length === expectedLegacyPresetLength) {
+      console.log(">> Processing legacy single preset (command 0x00)");
+      const bank = this.sysexBuffer[3] + (this.sysexBuffer[4] << 7); // Bank from parameter 1 (LSB-first)
+      const payloadStart = 1; // Parameters start after F0
 
-        if (command === 0x02 && this.sysexBuffer.length === expectedSinglePresetLength) {
-          console.log(">> Processing single preset data");
-          const processedData = {
-            parameters: [],
-            rhythmData: [],
-            bankNumber: bank,
-            firmwareVersion: 0,
-          };
+      const processedData = {
+        parameters: new Array(this.parameter_size).fill(0),
+        rhythmData: [],
+        bankNumber: bank,
+        firmwareVersion: 0,
+      };
 
-          // Extract 256 parameters from bytes 5 to 516 (512 bytes)
-          for (let i = 0; i < this.parameter_size; i++) {
-            const offset = 5 + 2 * i;
-            const sysex_value = this.sysexBuffer[offset] + (this.sysexBuffer[offset + 1] << 7);
-            if (i === this.firmware_adress) {
-              processedData.firmwareVersion = sysex_value / this.float_multiplier;
-              if (processedData.firmwareVersion < this.min_firmware_accepted) {
-                alert("Please update the minichord firmware");
-              }
-            } else if (i >= this.base_adress_rythm && i < this.base_adress_rythm + 16) {
-              const j = i - this.base_adress_rythm;
-              const rhythmBits = [];
-              for (let k = 0; k < 7; k++) {
-                rhythmBits[k] = !!(sysex_value & (1 << k));
-              }
-              processedData.rhythmData[j] = rhythmBits;
-            } else {
-              processedData.parameters[i] = sysex_value;
-            }
-          }
-
-          this.active_bank_number = processedData.bankNumber;
-          console.log(`>> Processed single preset for bank ${bank}, first 5 parameters:`, processedData.parameters.slice(0, 5));
-          if (this.onDataReceived) {
-            this.onDataReceived(processedData);
-          }
-        } else if (command === 0x04 && this.sysexBuffer.length === expectedAllPresetsLength) {
-          console.log(`>> Processing all presets data (${this.sysexBuffer.length} bytes)`);
-          const allPresets = [];
-          for (let bank = 0; bank < this.preset_number; bank++) {
-            const parameters = [];
-            for (let i = 0; i < this.parameter_size; i++) {
-              const offset = 5 + bank * this.parameter_size * 2 + 2 * i;
-              const sysex_value = this.sysexBuffer[offset] + (this.sysexBuffer[offset + 1] << 7);
-              parameters[i] = sysex_value;
-            }
-            allPresets[bank] = { bankNumber: bank, parameters };
-          }
-          if (this.onAllPresetsReceived) {
-            this.onAllPresetsReceived(allPresets);
-          }
-        } else {
-          console.log(`>> Ignoring SysEx message with unexpected command ${command} or length: ${this.sysexBuffer.length}`);
+      // Extract 256 parameters
+      for (let i = 0; i < this.parameter_size; i++) {
+        const offset = payloadStart + 2 * i;
+        if (offset + 1 >= this.sysexBuffer.length) {
+          console.warn(`>> Warning: Legacy SysEx too short for 256 parameters, length: ${this.sysexBuffer.length}`);
+          this.sysexBuffer = [];
+          return;
         }
-      } else {
-        console.log(">> Ignoring invalid SysEx message (incorrect header)");
+        const sysex_value = this.sysexBuffer[offset] + (this.sysexBuffer[offset + 1] << 7); // LSB-first
+        if (i === this.firmware_adress) {
+          processedData.firmwareVersion = sysex_value / this.float_multiplier;
+          if (processedData.firmwareVersion < this.min_firmware_accepted) {
+            alert("Please update the minichord firmware");
+          }
+        } else if (i >= this.base_adress_rythm && i < this.base_adress_rythm + 16) {
+          const j = i - this.base_adress_rythm;
+          const rhythmBits = [];
+          for (let k = 0; k < 7; k++) {
+            rhythmBits[k] = !!(sysex_value & (1 << k));
+          }
+          processedData.rhythmData[j] = rhythmBits;
+        } else {
+          processedData.parameters[i] = sysex_value;
+        }
       }
-      this.sysexBuffer = []; // Reset buffer
-    } else if (this.sysexBuffer.length > 6146) {
-      console.log(">> SysEx buffer overflow, resetting");
-      this.sysexBuffer = [];
+
+      this.active_bank_number = processedData.bankNumber;
+      console.log(`>> Processed legacy single preset for bank ${bank}, first 5 parameters:`, 
+        processedData.parameters.slice(0, 5), `firmware: ${processedData.firmwareVersion}`);
+      if (this.onDataReceived) {
+        this.onDataReceived(processedData);
+      }
+    } 
+    // Handle new format messages (516 or 6146 bytes)
+    else if (this.sysexBuffer[1] === 0x00 && this.sysexBuffer[2] === 0x00) {
+      const command = this.sysexBuffer[3];
+      const bank = this.sysexBuffer[4];
+
+      // Process new single preset (command 0x02, 516 bytes)
+      if (command === 0x02 && this.sysexBuffer.length === expectedSinglePresetLength) {
+        console.log(">> Processing new single preset (command 0x02)");
+        const processedData = {
+          parameters: new Array(this.parameter_size).fill(0),
+          rhythmData: [],
+          bankNumber: bank,
+          firmwareVersion: 0,
+        };
+
+        // Extract 256 parameters from bytes 5 to 516
+        for (let i = 0; i < this.parameter_size; i++) {
+          const offset = 5 + 2 * i;
+          const sysex_value = this.sysexBuffer[offset] + (this.sysexBuffer[offset + 1] << 7); // LSB-first
+          if (i === this.firmware_adress) {
+            processedData.firmwareVersion = sysex_value / this.float_multiplier;
+            if (processedData.firmwareVersion < this.min_firmware_accepted) {
+              alert("Please update the minichord firmware");
+            }
+          } else if (i >= this.base_adress_rythm && i < this.base_adress_rythm + 16) {
+            const j = i - this.base_adress_rythm;
+            const rhythmBits = [];
+            for (let k = 0; k < 7; k++) {
+              rhythmBits[k] = !!(sysex_value & (1 << k));
+            }
+            processedData.rhythmData[j] = rhythmBits;
+          } else {
+            processedData.parameters[i] = sysex_value;
+          }
+        }
+
+        this.active_bank_number = processedData.bankNumber;
+        console.log(`>> Processed new single preset for bank ${bank}, first 5 parameters:`, 
+          processedData.parameters.slice(0, 5), `firmware: ${processedData.firmwareVersion}`);
+        if (this.onDataReceived) {
+          this.onDataReceived(processedData);
+        }
+      } 
+      // Process all presets (command 0x04, 6146 bytes)
+      else if (command === 0x04 && this.sysexBuffer.length === expectedAllPresetsLength) {
+        console.log(`>> Processing all presets data (${this.sysexBuffer.length} bytes)`);
+        const allPresets = [];
+        for (let bank = 0; bank < this.preset_number; bank++) {
+          const parameters = new Array(this.parameter_size).fill(0);
+          for (let i = 0; i < this.parameter_size; i++) {
+            const offset = 5 + bank * this.parameter_size * 2 + 2 * i;
+            const sysex_value = this.sysexBuffer[offset] + (this.sysexBuffer[offset + 1] << 7); // LSB-first
+            parameters[i] = sysex_value;
+          }
+          allPresets[bank] = { bankNumber: bank, parameters };
+        }
+        if (this.onAllPresetsReceived) {
+          this.onAllPresetsReceived(allPresets);
+        }
+      } 
+      else {
+        console.log(`>> Ignoring SysEx message with command 0x${command.toString(16)}, length: ${this.sysexBuffer.length}, first 10 bytes:`, 
+          this.sysexBuffer.slice(0, 10).map(b => b.toString(16).padStart(2, '0')).join(' '));
+      }
+    } 
+    else {
+      console.log(">> Ignoring SysEx message with invalid header, length:", this.sysexBuffer.length, 
+        "first 10 bytes:", this.sysexBuffer.slice(0, 10).map(b => b.toString(16).padStart(2, '0')).join(' '));
     }
+    this.sysexBuffer = []; // Reset buffer
+  } else if (this.sysexBuffer.length > 6146) {
+    console.log(">> SysEx buffer overflow, resetting");
+    this.sysexBuffer = [];
   }
+}
 
 sendParameter(address, value) {
   if (!this.device) {
