@@ -176,6 +176,7 @@ processCurrentData(midiMessage) {
             rhythmBits[k] = !!(sysex_value & (1 << k));
           }
           processedData.rhythmData[j] = rhythmBits;
+          processedData.parameters[i] = sysex_value; // Explicitly set to preserve original value
         } else {
           processedData.parameters[i] = sysex_value;
         }
@@ -219,6 +220,7 @@ processCurrentData(midiMessage) {
               rhythmBits[k] = !!(sysex_value & (1 << k));
             }
             processedData.rhythmData[j] = rhythmBits;
+            processedData.parameters[i] = sysex_value; // Explicitly set to preserve original value
           } else {
             processedData.parameters[i] = sysex_value;
           }
