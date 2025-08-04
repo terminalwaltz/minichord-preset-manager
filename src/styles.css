@@ -234,12 +234,17 @@ body {
 }
 
 .preset.selected {
-  background-color: hsl(var(--preset-hue, 0), 50%, 65%); /* Slightly darker pastel for selected */
+  background-color: hsl(var(--preset-hue, 0), 50%, 50%); /* Slightly darker pastel for selected */
 }
 
 .preset.active {
   border-width: 8px;
-  background-color: hsl(var(--preset-hue, 0), 50%, 80%); /* Even darker pastel for active */
+  background-color: hsl(var(--preset-hue, 0), 50%, 90%); /* Even darker pastel for active */
+}
+
+.preset.active.selected {
+  border-width: 8px; /* Thick border from active state */
+  background-color: hsl(var(--preset-hue, 0), 50%, 50%); /* Same darker pastel as selected state */
 }
 
 .preset input,

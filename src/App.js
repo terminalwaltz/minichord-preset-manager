@@ -585,193 +585,210 @@ function PresetManager() {
     });
   };
 
-  return (
-    <div className="preset-manager">
-      <h1>minichord preset manager</h1>
-      <div id="status_zone" className={connectionStatus.connected ? "connected" : "disconnected"}>
-        <span id="dot"></span>
-        <span id="status_value"></span>
+return (
+  <div className="preset-manager">
+    <h1>minichord preset manager</h1>
+    <div id="status_zone" className={connectionStatus.connected ? "connected" : "disconnected"}>
+      <span id="dot"></span>
+      <span id="status_value"></span>
+    </div>
+    {isLoadingPresets && <div className="loading">Loading presets...</div>}
+    <div className="controls">
+      <div className="button-container">
+        <button onClick={handleSavePresets} disabled={!controller?.isConnected()}>
+          Export Presets (JSON)
+        </button>
+        <input
+          type="file"
+          accept=".json"
+          onChange={handleFileUpload}
+          style={{ display: "none" }}
+          id="file-upload"
+        />
+        <label htmlFor="file-upload">
+          <button
+            type="button"
+            disabled={!controller?.isConnected()}
+            onClick={() => document.getElementById("file-upload").click()}
+          >
+            Import Presets (JSON)
+          </button>
+        </label>
+        <button
+          onClick={handleResetMemory}
+          disabled={!controller?.isConnected()}
+        >
+          Wipe Memory
+        </button>
+        <button
+          onClick={handleFetchAllPresets}
+          disabled={!controller?.isConnected()}
+        >
+          Fetch All Presets
+        </button>
+        <button
+          onClick={() => setSelected(presetState.presets.map((_, index) => index))}
+          disabled={!controller?.isConnected()}
+        >
+          Select All Presets
+        </button>
+        <button
+          onClick={() => setSelected([])}
+          disabled={!controller?.isConnected()}
+        >
+          Deselect All Presets
+        </button>
+        <button
+          onClick={handleUploadOrder}
+          disabled={!controller?.isConnected() || isUploading}
+        >
+          Upload Order
+        </button>
       </div>
-      {isLoadingPresets && <div className="loading">Loading presets...</div>}
-      <div className="controls">
-        <div className="button-container">
-          <button onClick={handleSavePresets} disabled={!controller?.isConnected()}>
-            Export Presets (JSON)
-          </button>
-          <input
-            type="file"
-            accept=".json"
-            onChange={handleFileUpload}
-            style={{ display: "none" }}
-            id="file-upload"
-          />
-          <label htmlFor="file-upload">
-            <button
-              type="button"
-              disabled={!controller?.isConnected()}
-              onClick={() => document.getElementById("file-upload").click()}
-            >
-              Import Presets (JSON)
-            </button>
-          </label>
+      <div className="bulk-edit-container">
+        <div className="bulk-edit">
+          {bulkEdits.map((edit, index) => (
+            <div key={index} className="bulk-edit-row">
+              <select
+                value={edit.address ?? ""}
+                onChange={(e) => updateBulkEdit(index, "address", e.target.value)}
+                title={validParameters.find((p) => p.address === edit.address)?.tooltip || "Select a parameter"}
+              >
+                <option value="" disabled>Select Parameter</option>
+                {validParameters.map((param) => (
+                  <option key={param.address} value={param.address}>
+                    {param.displayName} (Address {param.address})
+                  </option>
+                ))}
+              </select>
+              {validParameters.find((p) => p.address === edit.address)?.data_type === "bool" ? (
+                <select
+                  key={`bool-select-${edit.address}`}
+                  value={edit.value ?? ""}
+                  onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
+                  className="bool-select"
+                >
+                  <option value="" disabled>Select Value</option>
+                  {validParameters.find((p) => p.address === edit.address)?.name === "sharp function" ? (
+                    <>
+                      <option value="0">Sharp</option>
+                      <option value="1">Flat</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="0">Off (0)</option>
+                      <option value="1">On (1)</option>
+                    </>
+                  )}
+                </select>
+              ) : (
+                <input
+                  type="number"
+                  min={validParameters.find((p) => p.address === edit.address)?.min_value || 0}
+                  max={validParameters.find((p) => p.address === edit.address)?.max_value || 16383}
+                  step={validParameters.find((p) => p.address === edit.address)?.data_type === "float" ? "0.1" : "1"}
+                  placeholder={
+                    validParameters.find((p) => p.address === edit.address)?.data_type === "float"
+                      ? `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 100}, maps to 0-100.0)`
+                      : `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 16383})`
+                  }
+                  value={edit.value ?? ""}
+                  onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
+                />
+              )}
+              {bulkEdits.length > 1 && (
+                <button
+                  className="remove-bulk-edit"
+                  onClick={() => removeBulkEdit(index)}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          ))}
           <button
-            onClick={handleResetMemory}
-            disabled={!controller?.isConnected()}
+            className="add-bulk-edit"
+            onClick={addBulkEdit}
+            disabled={bulkEdits.length >= validParameters.length}
           >
-            Wipe Memory
+            Add Parameter
           </button>
+          <span className="bulk-edit-note">
+            {bulkEdits.every((edit) => edit.address)
+              ? bulkEdits
+                  .map((edit) => {
+                    const param = validParameters.find((p) => p.address === edit.address);
+                    return param.data_type === "bool"
+                      ? param.name === "sharp function"
+                        ? `Select Sharp or Flat for ${param.displayName}`
+                        : `Select Off (0) or On (1) for ${param.displayName}`
+                      : param.data_type === "float"
+                      ? `Enter ${param.min_value}-${param.max_value} for ${param.displayName} (maps to 0-100.0 in firmware)`
+                      : `Enter ${param.min_value}-${param.max_value} for ${param.displayName}`;
+                  })
+                  .join("; ")
+              : "Select parameters to set value ranges"}
+          </span>
           <button
-            onClick={handleFetchAllPresets}
-            disabled={!controller?.isConnected()}
-          >
-            Fetch All Presets
-          </button>
-          <button
-            onClick={() => setSelected(presetState.presets.map((_, index) => index))}
-            disabled={!controller?.isConnected()}
-          >
-            Select All Presets
-          </button>
-          <button
-            onClick={handleUploadOrder}
+            onClick={handleBulkEdit}
             disabled={!controller?.isConnected() || isUploading}
           >
-            Upload Order
+            Apply to {selected.length > 0 ? "Selected" : "All"}
           </button>
         </div>
-        <div className="bulk-edit-container">
-          <div className="bulk-edit">
-            {bulkEdits.map((edit, index) => (
-              <div key={index} className="bulk-edit-row">
-                <select
-                  value={edit.address ?? ""}
-                  onChange={(e) => updateBulkEdit(index, "address", e.target.value)}
-                  title={validParameters.find((p) => p.address === edit.address)?.tooltip || "Select a parameter"}
-                >
-                  <option value="" disabled>Select Parameter</option>
-                  {validParameters.map((param) => (
-                    <option key={param.address} value={param.address}>
-                      {param.displayName} (Address {param.address})
-                    </option>
-                  ))}
-                </select>
-                {validParameters.find((p) => p.address === edit.address)?.data_type === "bool" ? (
-                  <select
-                    key={`bool-select-${edit.address}`}
-                    value={edit.value ?? ""}
-                    onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
-                    className="bool-select"
-                  >
-                    <option value="" disabled>Select Value</option>
-                    <option value="0">Off (0)</option>
-                    <option value="1">On (1)</option>
-                  </select>
-                ) : (
-                  <input
-                    type="number"
-                    min={validParameters.find((p) => p.address === edit.address)?.min_value || 0}
-                    max={validParameters.find((p) => p.address === edit.address)?.max_value || 16383}
-                    step={validParameters.find((p) => p.address === edit.address)?.data_type === "float" ? "0.1" : "1"}
-                    placeholder={
-                      validParameters.find((p) => p.address === edit.address)?.data_type === "float"
-                        ? `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 100}, maps to 0-100.0)`
-                        : `Value (0-${validParameters.find((p) => p.address === edit.address)?.max_value || 16383})`
-                    }
-                    value={edit.value ?? ""}
-                    onChange={(e) => updateBulkEdit(index, "value", e.target.value)}
-                  />
-                )}
-                {bulkEdits.length > 1 && (
-                  <button
-                    className="remove-bulk-edit"
-                    onClick={() => removeBulkEdit(index)}
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            ))}
-            <button
-              className="add-bulk-edit"
-              onClick={addBulkEdit}
-              disabled={bulkEdits.length >= validParameters.length}
-            >
-              Add Parameter
-            </button>
-            <span className="bulk-edit-note">
-              {bulkEdits.every((edit) => edit.address)
-                ? bulkEdits
-                    .map((edit) => {
-                      const param = validParameters.find((p) => p.address === edit.address);
-                      return param.data_type === "bool"
-                        ? `Select Off (0) or On (1) for ${param.displayName}`
-                        : param.data_type === "float"
-                        ? `Enter ${param.min_value}-${param.max_value} for ${param.displayName} (maps to 0-100.0 in firmware)`
-                        : `Enter ${param.min_value}-${param.max_value} for ${param.displayName}`;
-                    })
-                    .join("; ")
-                : "Select parameters to set value ranges"}
-            </span>
-            <button
-              onClick={handleBulkEdit}
-              disabled={!controller?.isConnected() || isUploading}
-            >
-              Apply to {selected.length > 0 ? "Selected" : "All"}
-            </button>
-          </div>
-        </div>
-      </div>
-      <div className="presets">
-        {presetState.presets.map((preset, index) => (
-          <div
-            key={preset.id}
-            className={`preset ${selected.includes(index) ? "selected" : ""} ${
-              activeBank === index ? "active" : ""
-            }`}
-            style={{
-              borderColor: getPresetColor(preset),
-              '--preset-hue': preset.values[20] || 0 // Pass hue as CSS custom property
-            }}
-            draggable
-            onDragStart={(e) => {
-              e.stopPropagation();
-              handleDragStart(index);
-            }}
-            onDragOver={(e) => handleDragOver(e, index)}
-            onDrop={(e) => {
-              e.stopPropagation();
-              handleDrop(index);
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              handlePresetSelect(index);
-            }}
-          >
-            <input
-              type="text"
-              value={preset.title}
-              onChange={(e) => handlePresetChange(index, "title", e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Preset Title"
-            />
-            <input
-              type="text"
-              value={preset.author}
-              onChange={(e) => handlePresetChange(index, "author", e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Author"
-            />
-            <textarea
-              value={preset.note}
-              onChange={(e) => handlePresetChange(index, "note", e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Note"
-            />
-          </div>
-        ))}
       </div>
     </div>
-  );
+    <div className="presets">
+      {presetState.presets.map((preset, index) => (
+        <div
+          key={preset.id}
+          className={`preset ${selected.includes(index) ? "selected" : ""} ${
+            activeBank === index ? "active" : ""
+          }`}
+          style={{
+            borderColor: getPresetColor(preset),
+            '--preset-hue': preset.values[20] || 0 // Pass hue as CSS custom property
+          }}
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            handleDragStart(index);
+          }}
+          onDragOver={(e) => handleDragOver(e, index)}
+          onDrop={(e) => {
+            e.stopPropagation();
+            handleDrop(index);
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handlePresetSelect(index);
+          }}
+        >
+          <input
+            type="text"
+            value={preset.title}
+            onChange={(e) => handlePresetChange(index, "title", e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Preset Title"
+          />
+          <input
+            type="text"
+            value={preset.author}
+            onChange={(e) => handlePresetChange(index, "author", e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Author"
+          />
+          <textarea
+            value={preset.note}
+            onChange={(e) => handlePresetChange(index, "note", e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Note"
+          />
+        </div>
+      ))}
+    </div>
+  </div>
+);
 }
 
 export default PresetManager;
