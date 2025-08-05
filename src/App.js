@@ -40,7 +40,7 @@ function PresetManager() {
   const [presetState, setPresetState] = useState({
     presets: Array.from({ length: 12 }, (_, id) => ({
       id,
-      title: `Preset ${id + 1}`,
+      title: `Preset ${id + 1}`, // Changed from `Preset ${id + 1}` to `Bank ${id + 1}`
       author: "",
       note: "",
       values: new Array(256).fill(0),
@@ -98,6 +98,7 @@ function PresetManager() {
       return;
     }
 
+    // Validate all bulk edits
     for (const edit of bulkEdits) {
       if (edit.address == null || edit.value == null) {
         alert("Please select a parameter and value for all fields");
@@ -142,6 +143,7 @@ function PresetManager() {
       const newPresets = [...prev.presets];
       const targetIndexes = selected.length > 0 ? selected : prev.presets.map((_, i) => i);
 
+      // Apply bulk edits to the target presets
       targetIndexes.forEach((index) => {
         newPresets[index] = {
           ...newPresets[index],
@@ -157,45 +159,81 @@ function PresetManager() {
         };
       });
 
-      const presetsToUpload = newPresets
-        .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
-        .map((preset) => ({
-          value: btoa(preset.values.join(';')),
-          name: preset.title,
-          author: preset.author,
-          description: preset.note,
-        }));
-
       console.log(
         `>> Bulk edit: Setting ${bulkEdits
           .map((e) => {
             const param = validParameters.find((p) => p.address === e.address);
             return `${param.displayName} (address ${e.address}) to ${e.value}`;
           })
-          .join(", ")} for presets ${selected.length > 0 ? selected.join(',') : 'all'}`
+          .join(", ")} for presets ${selected.length > 0 ? selected.map(i => i + 1).join(",") : "all"}` // Use 1-based preset numbers in log
       );
 
-      (async () => {
-        try {
-          setIsLoadingPresets(true);
-          const success = await controller.uploadAllPresets(presetsToUpload);
-          setIsLoadingPresets(false);
-          setIsUploading(false);
-          if (success) {
-            console.log(">> Bulk edit upload successful");
-            showUploadSuccess("Bulk edit applied and uploaded successfully");
-            setBulkEdits([{ address: null, value: null }]);
-          } else {
-            console.error(">> Bulk edit upload failed");
-            alert("Failed to upload presets: device not connected or invalid data");
+      // Handle upload based on number of selected presets
+      if (selected.length === 1) {
+        // Single preset: Use uploadPreset to target the specific preset
+        const presetIndex = selected[0];
+        const preset = newPresets[presetIndex];
+/*         const presetToUpload = {
+          value: btoa(preset.values.join(";")),
+          name: preset.title,
+          author: preset.author,
+          description: preset.note,
+        }; */
+
+        (async () => {
+          try {
+            setIsLoadingPresets(true);
+            const success = await controller.uploadPreset(presetIndex, preset.values);
+            setIsLoadingPresets(false);
+            setIsUploading(false);
+            if (success) {
+              console.log(`>> Bulk edit upload successful for preset ${presetIndex + 1}`); // 1-based in log
+              showUploadSuccess(`Bulk edit applied and uploaded successfully to preset ${presetIndex + 1}`); // 1-based in message
+              setBulkEdits([{ address: null, value: null }]);
+            } else {
+              console.error(">> Bulk edit upload failed");
+              alert("Failed to upload preset: device not connected or invalid data");
+            }
+          } catch (error) {
+            setIsLoadingPresets(false);
+            setIsUploading(false);
+            console.error(`>> Error uploading preset: ${error.message}`);
+            alert(`Error uploading preset: ${error.message}`);
           }
-        } catch (error) {
-          setIsLoadingPresets(false);
-          setIsUploading(false);
-          console.error(`>> Error uploading presets: ${error.message}`);
-          alert(`Error uploading presets: ${error.message}`);
-        }
-      })();
+        })();
+      } else {
+        // Multiple or all presets: Use uploadAllPresets
+        const presetsToUpload = newPresets
+          .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
+          .map((preset, index) => ({
+            value: btoa(preset.values.join(";")),
+            name: preset.title,
+            author: preset.author,
+            description: preset.note,
+          }));
+
+        (async () => {
+          try {
+            setIsLoadingPresets(true);
+            const success = await controller.uploadAllPresets(presetsToUpload);
+            setIsLoadingPresets(false);
+            setIsUploading(false);
+            if (success) {
+              console.log(">> Bulk edit upload successful");
+              showUploadSuccess("Bulk edit applied and uploaded successfully");
+              setBulkEdits([{ address: null, value: null }]);
+            } else {
+              console.error(">> Bulk edit upload failed");
+              alert("Failed to upload presets: device not connected or invalid data");
+            }
+          } catch (error) {
+            setIsLoadingPresets(false);
+            setIsUploading(false);
+            console.error(`>> Error uploading presets: ${error.message}`);
+            alert(`Error uploading presets: ${error.message}`);
+          }
+        })();
+      }
 
       return { presets: newPresets };
     });
@@ -244,7 +282,7 @@ function PresetManager() {
       setPresetState((prev) => ({
         presets: allPresets.map((preset, index) => ({
           id: index,
-          title: prev.presets[index]?.title || `Preset ${index + 1}`,
+          title: prev.presets[index]?.title || `Preset ${index + 1}`, // Use 1-based preset number
           author: prev.presets[index]?.author || "",
           note: prev.presets[index]?.note || "",
           values: preset.parameters.map((v) => Math.max(0, Math.min(32767, v))),
@@ -747,7 +785,7 @@ return (
           }`}
           style={{
             borderColor: getPresetColor(preset),
-            '--preset-hue': preset.values[20] || 0 // Pass hue as CSS custom property
+            '--preset-hue': preset.values[20] || 0
           }}
           draggable
           onDragStart={(e) => {
@@ -769,7 +807,7 @@ return (
             value={preset.title}
             onChange={(e) => handlePresetChange(index, "title", e.target.value)}
             onClick={(e) => e.stopPropagation()}
-            placeholder="Preset Title"
+            placeholder={`Preset ${index + 1}`} // Updated to 1-based preset number
           />
           <input
             type="text"
