@@ -4,72 +4,127 @@
   box-sizing: border-box;
 }
 
+/* Define CSS variables for light and dark themes */
+:root {
+  --bg-color: white;
+  --text-color: black;
+  --border-color: black;
+  --button-bg: white;
+  --button-text: black;
+  --status-connected-bg: lightgreen;
+  --status-connected-border: green;
+  --status-disconnected-bg: rgba(255, 166, 0, 0.486);
+  --status-disconnected-border: orange;
+  --status-unconnected-bg: lightcoral;
+  --status-unconnected-border: red;
+  --controls-bg: whitesmoke;
+  --preset-bg: hsl(var(--preset-hue, 0), 50%, 90%);
+  --preset-selected-bg: hsl(var(--preset-hue, 0), 50%, 50%);
+  --add-button-bg: #e6f3ff;
+  --remove-button-bg: #ffe6e6;
+  --bulk-edit-note-color: #666;
+  --loading-color: blue;
+}
+
+[data-theme="dark"] {
+  --bg-color: #1e1e1e;
+  --text-color: #e0e0e0;
+  --border-color: #555;
+  --button-bg: #333;
+  --button-text: #e0e0e0;
+  --status-connected-bg: #2a4d2a;
+  --status-connected-border: #4caf50;
+  --status-disconnected-bg: #4d3a1f;
+  --status-disconnected-border: #ff9800;
+  --status-unconnected-bg: #4d2a2a;
+  --status-unconnected-border: #f44336;
+  --controls-bg: #2a2a2a;
+  --preset-bg: hsl(var(--preset-hue, 0), 50%, 20%);
+  --preset-selected-bg: hsl(var(--preset-hue, 0), 50%, 40%);
+  --add-button-bg: #3a506b;
+  --remove-button-bg: #6b3a3a;
+  --bulk-edit-note-color: #aaa;
+  --loading-color: #42a5f5;
+}
+
 body {
-  margin-left: 3vw; /* Reduced from 5vw */
+  margin-left: 3vw;
   margin-right: 3vw;
   font-family: sans-serif;
-  font-size: 1.2em; /* Reduced from 1.6em */
-  line-height: 1.2em; /* Reduced from 1.25em */
+  font-size: 1.2em;
+  line-height: 1.2em;
+  background-color: var(--bg-color);
+  color: var(--text-color);
 }
 
 .preset-manager {
-  padding: 10px; /* Reduced from 20px */
+  padding: 10px;
+}
+
+
+/* Status Container */
+.status-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  flex-wrap: nowrap; /* Prevent wrapping to avoid stacking */
 }
 
 /* Connection Status */
 #status_zone {
   border-style: solid;
-  border-radius: 0.8em; /* Reduced from 1em */
-  border-width: 1px; /* Reduced from 2px */
-  margin-bottom: 1em; 
+  border-radius: 0.8em;
+  border-width: 1px;
   padding: 1px;
   display: flex;
   align-items: center;
-  font-size: 0.7em; /* Reduced from 0.9em */
-  max-width: 150px; /* Reduced from 270px */
-  margin-top: 1em; 
-  margin-right: 0px;
+  font-size: 0.7em;
+  max-width: 150px;
+  width: 150px; /* Ensure consistent width to avoid shrinking */
+  margin: 0; /* Remove margins to prevent layout shifts */
 }
 
 #status_zone.connected {
-  border-color: green;
-  background-color: lightgreen;
+  border-color: var(--status-connected-border);
+  background-color: var(--status-connected-bg);
 }
 
 #status_zone.disconnected {
-  border-color: orange;
-  background-color: rgba(255, 166, 0, 0.486);
+  border-color: var(--status-disconnected-border);
+  background-color: var(--status-disconnected-bg);
 }
 
 #status_zone.unconnected {
-  border-color: red;
-  background-color: lightcoral;
+  border-color: var(--status-unconnected-border);
+  background-color: var(--status-unconnected-bg);
 }
 
 #status_value {
-  margin-right: 0em; /* Reduced from 0.5em */
+  margin-right: 0em;
   margin-left: 0em;
 }
 
 #dot {
   display: inline-block;
-  width: 6px; /* Reduced from 8px */
+  width: 6px;
   height: 6px;
   border-radius: 50%;
-  margin-left: 0.3em; /* Reduced from 0.5em */
+  margin-left: 0.3em;
   margin-right: 0.3em;
 }
 
 .connected #dot {
-  background-color: green;
+  background-color: var(--status-connected-border);
 }
 
 .disconnected #dot {
-  background-color: orange;
+  background-color: var(--status-disconnected-border);
 }
 
 .unconnected #dot {
-  background-color: red;
+  background-color: var(--status-unconnected-border);
 }
 
 .unconnected #status_value::after {
@@ -86,38 +141,38 @@ body {
 
 /* Loading */
 .loading {
-  font-size: 0.7em; /* Reduced from 0.9em */
-  color: blue;
-  margin: 5px 0; /* Reduced from 10px */
+  font-size: 0.7em;
+  color: var(--loading-color);
+  margin: 5px 0;
 }
 
 /* Controls */
 .controls {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 0.5em; /* Reduced from 1em */
+  margin-bottom: 0.5em;
   position: sticky;
   top: 0;
-  background-color: white;
+  background-color: var(--controls-bg);
   z-index: 2;
-  padding: 5px 0; /* Reduced from 10px */
+  padding: 5px 0;
 }
 
 .button-container {
   display: flex;
   flex-direction: column;
-  gap: 5px; /* Reduced from 10px */
-  width: 150px; /* Reduced from 200px */
+  gap: 5px;
+  width: 150px;
 }
 
 .button-container button {
-  background-color: white;
-  border: 1px solid black;
-  color: black;
+  background-color: var(--button-bg);
+  border: 1px solid var(--border-color);
+  color: var(--button-text);
   cursor: pointer;
   font-family: sans-serif;
-  font-size: 0.8em; /* Reduced from 1em */
-  padding: 0.3em; /* Reduced from 0.5em */
+  font-size: 0.8em;
+  padding: 0.3em;
   text-align: center;
 }
 
@@ -135,75 +190,78 @@ body {
 .bulk-edit-container {
   display: flex;
   align-items: flex-start;
-  width: calc(100% - 170px); /* Adjusted for smaller button-container width */
+  width: calc(100% - 170px);
 }
 
 .bulk-edit {
   display: flex;
   flex-direction: column;
-  gap: 5px; /* Reduced from 10px */
+  gap: 5px;
   width: 100%;
 }
 
 .bulk-edit-row {
   display: flex;
   align-items: center;
-  gap: 5px; /* Reduced from 10px */
+  gap: 5px;
   flex-wrap: wrap;
 }
 
 .bulk-edit select,
 .bulk-edit .bool-select {
-  padding: 0.3em; /* Reduced from 0.5em */
-  border: 1px solid black;
+  padding: 0.3em;
+  border: 1px solid var(--border-color);
   font-family: monospace;
-  font-size: 0.8em; /* Reduced from 1em */
-  background-color: white;
-  width: 250px; /* Reduced from 300px */
+  font-size: 0.8em;
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  width: 250px;
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
 }
 
 .bulk-edit .bool-select {
-  width: 100px; 
+  width: 100px;
 }
 
 .bulk-edit input[type="number"] {
-  padding: 0.3em; /* Reduced from 0.5em */
-  border: 1px solid black;
+  padding: 0.3em;
+  border: 1px solid var(--border-color);
   font-family: sans-serif;
-  font-size: 0.8em; /* Reduced from 1em */
+  font-size: 0.8em;
+  background-color: var(--button-bg);
+  color: var(--button-text);
   width: 100px;
 }
 
 .bulk-edit-note {
-  font-size: 0.45em; /* Reduced from 0.55em */
-  color: #666;
-  margin-top: 5px; /* Reduced from 10px */
+  font-size: 0.45em;
+  color: var(--bulk-edit-note-color);
+  margin-top: 5px;
   flex: 1;
 }
 
 .bulk-edit button,
 .bulk-edit .add-bulk-edit,
 .bulk-edit .remove-bulk-edit {
-  background-color: white;
-  border: 1px solid black;
-  color: black;
+  background-color: var(--button-bg);
+  border: 1px solid var(--border-color);
+  color: var(--button-text);
   cursor: pointer;
   font-family: sans-serif;
-  font-size: 0.8em; /* Reduced from 1em */
-  padding: 0.3em; /* Reduced from 0.5em */
+  font-size: 0.8em;
+  padding: 0.3em;
   text-align: center;
-  width: 12%; /* Reduced from 15% */
+  width: 12%;
 }
 
 .bulk-edit .add-bulk-edit {
-  background-color: #e6f3ff;
+  background-color: var(--add-button-bg);
 }
 
 .bulk-edit .remove-bulk-edit {
-  background-color: #ffe6e6;
+  background-color: var(--remove-button-bg);
 }
 
 .bulk-edit button:hover,
@@ -223,41 +281,78 @@ body {
 .presets {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 10px; /* Reduced from 20px */
+  gap: 10px;
 }
 
 .preset {
-  border: 2px solid black; /* Reduced from 3px */
-  background-color: hsl(var(--preset-hue, 0), 50%, 90%);
-  padding: 5px; /* Reduced from 10px */
-  border-radius: 8px; /* Reduced from 10px */
+  border: 2px solid var(--border-color);
+  background-color: var(--preset-bg);
+  padding: 5px;
+  border-radius: 8px;
   cursor: move;
   user-select: none;
 }
 
 .preset.selected {
-  background-color: hsl(var(--preset-hue, 0), 50%, 50%);
+  background-color: var(--preset-selected-bg);
 }
 
 .preset.active {
-  border-width: 6px; /* Reduced from 8px */
-  background-color: hsl(var(--preset-hue, 0), 50%, 90%);
+  border-width: 6px;
+  background-color: var(--preset-bg);
 }
 
 .preset.active.selected {
-  border-width: 6px; /* Reduced from 8px */
-  background-color: hsl(var(--preset-hue, 0), 50%, 50%);
+  border-width: 6px;
+  background-color: var(--preset-selected-bg);
 }
 
 .preset input,
 .preset textarea {
   width: 100%;
-  margin: 3px 0; /* Reduced from 5px */
-  padding: 0.15em; /* Reduced from 0.2em */
-  border: 1px solid black;
+  margin: 3px 0;
+  padding: 0.15em;
+  border: 1px solid var(--border-color);
   font-family: sans-serif;
-  font-size: 0.7em; /* Reduced from 0.9em */
+  font-size: 0.7em;
+  background-color: var(--button-bg);
+  color: var(--button-text);
 }
+
+/* Theme Toggle */
+.theme-toggle {
+  display: inline-block;
+  flex-shrink: 0; /* Prevent toggle from shrinking */
+}
+
+.theme-toggle input[type="checkbox"] {
+  display: none;
+}
+
+.theme-toggle label {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  font-size: 18px;
+  line-height: 24px;
+  text-align: center;
+  color: var(--button-text);
+  background-color: var(--controls-bg);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.3s, background-color 0.3s;
+}
+
+.theme-toggle input:checked + label::before {
+  content: '☾'; /* Moon for dark mode */
+}
+
+.theme-toggle input:not(:checked) + label::before {
+  content: '☀'; /* Sun for light mode */
+}
+
+
+
 
 /* Responsive Adjustments */
 @media all and (max-width: 1200px) {
@@ -267,30 +362,37 @@ body {
 
   .bulk-edit select,
   .bulk-edit .bool-select {
-    width: 200px; /* Reduced from 250px */
+    width: 200px;
   }
 
   .bulk-edit .bool-select {
-    width: 60px; /* Reduced from 80px */
+    width: 60px;
   }
 
   .bulk-edit input[type="number"] {
-    width: 60px; /* Reduced from 80px */
+    width: 60px;
   }
 }
 
 @media all and (max-width: 850px) {
   body {
     margin: 0;
-    font-size: 1.0em; /* Reduced from 1.5em */
+    font-size: 1.0em;
   }
 
   .controls {
     flex-direction: column;
-    gap: 10px; /* Reduced from 20px */
-    border: 1px dashed black; /* Reduced from 2px */
-    background-color: whitesmoke;
-    padding: 0.3em; /* Reduced from 0.5em */
+    gap: 10px;
+    border: 1px dashed var(--border-color);
+    background-color: var(--controls-bg);
+    padding: 0.3em;
+  }
+  .status-container {
+    gap: 5px; /* Reduced gap for smaller screens */
+  }
+
+  #status_zone {
+    width: 120px; /* Slightly smaller width for smaller screens */
   }
 
   .button-container {
@@ -303,18 +405,23 @@ body {
 
   .bulk-edit select,
   .bulk-edit .bool-select {
-    width: 150px; /* Reduced from 200px */
+    width: 150px;
   }
 
   .bulk-edit .bool-select {
-    width: 50px; /* Reduced from 70px */
+    width: 50px;
   }
 
   .bulk-edit input[type="number"] {
-    width: 50px; /* Reduced from 70px */
+    width: 50px;
   }
 
   .presets {
     grid-template-columns: 1fr;
+  }
+
+  .theme-toggle {
+    top: 5px;
+    right: 5px;
   }
 }
