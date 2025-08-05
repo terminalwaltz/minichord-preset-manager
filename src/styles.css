@@ -17,7 +17,7 @@
   --status-disconnected-border: orange;
   --status-unconnected-bg: lightcoral;
   --status-unconnected-border: red;
-  --controls-bg: whitesmoke;
+  --controls-bg: white;
   --preset-bg: hsl(var(--preset-hue, 0), 50%, 90%);
   --preset-selected-bg: hsl(var(--preset-hue, 0), 50%, 50%);
   --add-button-bg: #e6f3ff;
@@ -38,7 +38,7 @@
   --status-disconnected-border: #ff9800;
   --status-unconnected-bg: #4d2a2a;
   --status-unconnected-border: #f44336;
-  --controls-bg: #2a2a2a;
+  --controls-bg: #1e1e1e;
   --preset-bg: hsl(var(--preset-hue, 0), 50%, 20%);
   --preset-selected-bg: hsl(var(--preset-hue, 0), 50%, 40%);
   --add-button-bg: #3a506b;
@@ -286,7 +286,7 @@ body {
 
 .preset {
   border: 2px solid var(--border-color);
-  background-color: var(--preset-bg);
+  background-color: hsl(var(--preset-hue, 0), 50%, 90%); /* Restored light mode background */
   padding: 5px;
   border-radius: 8px;
   cursor: move;
@@ -294,17 +294,17 @@ body {
 }
 
 .preset.selected {
-  background-color: var(--preset-selected-bg);
+  background-color: hsl(var(--preset-hue, 0), 50%, 50%); /* Restored selected background */
 }
 
 .preset.active {
   border-width: 6px;
-  background-color: var(--preset-bg);
+  background-color: hsl(var(--preset-hue, 0), 50%, 90%); /* Restored light mode background */
 }
 
 .preset.active.selected {
   border-width: 6px;
-  background-color: var(--preset-selected-bg);
+  background-color: hsl(var(--preset-hue, 0), 50%, 50%); /* Restored selected background */
 }
 
 .preset input,
@@ -318,6 +318,26 @@ body {
   background-color: var(--button-bg);
   color: var(--button-text);
 }
+
+/* Dark mode preset adjustments */
+[data-theme="dark"] .preset {
+  background-color: hsl(var(--preset-hue, 0), 50%, 20%); /* Darker pastel for dark mode */
+}
+
+[data-theme="dark"] .preset.selected {
+  background-color: hsl(var(--preset-hue, 0), 50%, 40%); /* Brighter selected state for dark mode */
+}
+
+[data-theme="dark"] .preset.active {
+  border-width: 6px;
+  background-color: hsl(var(--preset-hue, 0), 50%, 20%); /* Darker pastel for active */
+}
+
+[data-theme="dark"] .preset.active.selected {
+  border-width: 6px;
+  background-color: hsl(var(--preset-hue, 0), 50%, 40%); /* Brighter selected active state */
+}
+
 
 /* Theme Toggle */
 .theme-toggle {
