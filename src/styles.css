@@ -343,6 +343,8 @@ body {
 .theme-toggle {
   display: inline-block;
   flex-shrink: 0; /* Prevent toggle from shrinking */
+  margin-top: 10px;
+  margin-bottom: 5px;
 }
 
 .theme-toggle input[type="checkbox"] {
