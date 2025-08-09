@@ -213,39 +213,41 @@ function PresetManager() {
             alert(`Error uploading preset: ${error.message}`);
           }
         })();
-      } else {
-        // Multiple or all presets: Use uploadAllPresets
-        const presetsToUpload = newPresets
-          .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
-          .map((preset, index) => ({
-            value: btoa(preset.values.join(";")),
-            name: preset.title,
-            author: preset.author,
-            description: preset.note,
-          }));
+          } else {
+            // Multiple or all presets: Use uploadAllPresets with selected indices
+            const presetsToUpload = newPresets
+              .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
+              .map((preset, index) => ({
+                value: btoa(preset.values.join(";")),
+                name: preset.title,
+                author: preset.author,
+                description: preset.note,
+              }));
 
-        (async () => {
-          try {
-            setIsLoadingPresets(true);
-            const success = await controller.uploadAllPresets(presetsToUpload);
-            setIsLoadingPresets(false);
-            setIsUploading(false);
-            if (success) {
-              console.log(">> Bulk edit upload successful");
-              showUploadSuccess("Bulk edit applied and uploaded successfully");
-              setBulkEdits([{ address: null, value: null }]);
-            } else {
-              console.error(">> Bulk edit upload failed");
-              alert("Failed to upload presets: device not connected or invalid data");
-            }
-          } catch (error) {
-            setIsLoadingPresets(false);
-            setIsUploading(false);
-            console.error(`>> Error uploading presets: ${error.message}`);
-            alert(`Error uploading presets: ${error.message}`);
+            (async () => {
+              try {
+                setIsLoadingPresets(true);
+                // Pass both presetsToUpload and the target indices
+                const targetIndexes = selected.length > 0 ? selected : newPresets.map((_, i) => i);
+                const success = await controller.uploadAllPresets(presetsToUpload, targetIndexes);
+                setIsLoadingPresets(false);
+                setIsUploading(false);
+                if (success) {
+                  console.log(">> Bulk edit upload successful");
+                  showUploadSuccess("Bulk edit applied and uploaded successfully");
+                  setBulkEdits([{ address: null, value: null }]);
+                } else {
+                  console.error(">> Bulk edit upload failed");
+                  alert("Failed to upload presets: device not connected or invalid data");
+                }
+              } catch (error) {
+                setIsLoadingPresets(false);
+                setIsUploading(false);
+                console.error(`>> Error uploading presets: ${error.message}`);
+                alert(`Error uploading presets: ${error.message}`);
+              }
+            })();
           }
-        })();
-      }
 
       return { presets: newPresets };
     });
@@ -388,18 +390,19 @@ function PresetManager() {
       return;
     }
 
-    const presetsToUpload = presetState.presets.map((preset) => ({
+    const presetsToUpload = presetState.presets.map((preset, index) => ({
       value: btoa(preset.values.join(';')),
       name: preset.title,
       author: preset.author,
       description: preset.note,
     }));
+    const targetIndexes = presetState.presets.map((_, index) => index); // All presets
 
     console.log(">> Initiating preset order upload");
     try {
       setIsUploading(true);
       setIsLoadingPresets(true);
-      const success = await controller.uploadAllPresets(presetsToUpload);
+      const success = await controller.uploadAllPresets(presetsToUpload, targetIndexes);
       setIsLoadingPresets(false);
       setIsUploading(false);
       if (success) {
@@ -527,7 +530,9 @@ function PresetManager() {
           console.log(">> Calling uploadAllPresets with", validPresets.length, "valid presets");
           setIsUploading(true);
           setIsLoadingPresets(true);
-          const success = await controller.uploadAllPresets(validPresets);
+          // Create targetIndexes for all presets (0 to validPresets.length - 1)
+          const targetIndexes = Array.from({ length: validPresets.length }, (_, i) => i);
+          const success = await controller.uploadAllPresets(validPresets, targetIndexes);
           setIsLoadingPresets(false);
           setIsUploading(false);
           if (success) {
@@ -556,27 +561,53 @@ function PresetManager() {
     fileInput.value = '';
   };
 
-  const handleSavePresets = () => {
+  const handleSavePresets = async () => {
     console.log(">> Saving presets to JSON");
-    const jsonData = {
-      presets: presetState.presets.map(preset => ({
-        name: preset.title,
-        author: preset.author,
-        description: preset.note,
-        value: btoa(preset.values.join(';'))
-      }))
-    };
-    const jsonString = JSON.stringify(jsonData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'minichord_presets.json';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    console.log(">> Presets saved to file");
+    try {
+      // Prepare JSON data
+      const jsonData = {
+        presets: presetState.presets.map(preset => ({
+          name: preset.title,
+          author: preset.author,
+          description: preset.note,
+          value: btoa(preset.values.join(';'))
+        }))
+      };
+      const jsonString = JSON.stringify(jsonData, null, 2);
+
+      // Check if showSaveFilePicker is supported
+      if ('showSaveFilePicker' in window) {
+        // Prompt user for file location and name
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName: 'minichord_presets.json',
+          types: [
+            {
+              description: 'JSON Files',
+              accept: { 'application/json': ['.json'] }
+            }
+          ]
+        });
+
+        // Create a writable stream and write the JSON data
+        const writable = await fileHandle.createWritable();
+        await writable.write(jsonString);
+        await writable.close();
+      } else {
+        // Fallback for browsers that don't support showSaveFilePicker
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'minichord_presets.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+      console.log(">> Presets saved to file");
+    } catch (err) {
+      console.error(">> Error saving presets:", err);
+    }
   };
 
   const handleResetMemory = () => {

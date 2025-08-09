@@ -356,7 +356,7 @@ sendParameter(address, value) {
     }
   }
 
-  async uploadAllPresets(presets) {
+  async uploadAllPresets(presets, targetIndexes) {
     if (!this.device) {
       console.error(">> ERROR: Cannot send presets, no device connected");
       return false;
@@ -365,38 +365,37 @@ sendParameter(address, value) {
       console.error(`Error: Expected non-empty presets array, got ${presets?.length || 'undefined'}`);
       return false;
     }
-    console.log(">> Starting uploadAllPresets with", presets.length, "presets");
+    if (!Array.isArray(targetIndexes) || targetIndexes.length !== presets.length) {
+      console.error(`Error: targetIndexes length (${targetIndexes?.length || 'undefined'}) does not match presets length (${presets.length})`);
+      return false;
+    }
+    console.log(">> Starting uploadAllPresets with", presets.length, "presets for banks", targetIndexes.join(','));
     let success = true;
-    for (let bank = 0; bank < Math.min(this.preset_number, presets.length); bank++) {
-      const preset = presets[bank];
+    for (let i = 0; i < presets.length; i++) {
+      const bank = targetIndexes[i];
+      const preset = presets[i];
       if (!preset || !preset.value || typeof preset.value !== 'string') {
-        console.warn(`>> Skipping preset ${bank}: Missing or invalid 'value' field`);
+        console.warn(`>> Skipping preset for bank ${bank}: Missing or invalid 'value' field`);
+        success = false;
         continue;
       }
       console.log(`>> Processing preset ${bank}`);
       let parameters;
       try {
-        // Decode base64 and remove any trailing semicolons
         const decodedString = atob(preset.value.replace(/[^A-Za-z0-9+/=]/g, '')).replace(/;+$/, '');
         console.log(`>> Raw preset.value for bank ${bank}:`, preset.value);
         console.log(`>> Decoded string for preset ${bank}:`, decodedString);
         console.log(`>> Decoded string length for preset ${bank}:`, decodedString.length);
-
-        // Split into parameters using semicolons
         parameters = decodedString.split(';').map(num => {
           const value = parseInt(num, 10);
           return isNaN(value) || value < 0 || value > 16383 ? 0 : value;
         });
-
         if (parameters.length !== 256) {
           console.error(`>> Error: Preset ${bank} has ${parameters.length} parameters, expected 256. Skipping.`);
           success = false;
           continue;
         }
-
-        // Log first few parameters for debugging
         console.log(`>> First 5 parameters for preset ${bank}:`, parameters.slice(0, 5));
-
         const successUpload = await this.uploadPreset(bank, parameters);
         if (!successUpload) {
           console.error(`>> Error: Failed to upload preset ${bank}`);
