@@ -1,40 +1,43 @@
 import React, { useState, useEffect } from "react";
 import MiniChordController from "./minichordcontroller";
 import "./styles.css";
-import parametersData from './parameters.json';
 
-// Combine parameters, use parameters.json ranges
-const validParameters = [
-  ...parametersData.global_parameter.map(param => ({
-    address: param.sysex_adress,
-    name: param.name,
-    displayName: `global::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
-    data_type: param.data_type,
-    min_value: param.data_type === "bool" ? 0 : param.min_value,
-    max_value: param.data_type === "bool" ? 1 : param.max_value,
-    tooltip: param.tooltip
-  })),
-  ...parametersData.harp_parameter.map(param => ({
-    address: param.sysex_adress,
-    name: param.name,
-    displayName: `harp::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
-    data_type: param.data_type,
-    min_value: param.data_type === "bool" ? 0 : param.min_value,
-    max_value: param.data_type === "bool" ? 1 : param.max_value,
-    tooltip: param.tooltip
-  })),
-  ...parametersData.chord_parameter.map(param => ({
-    address: param.sysex_adress,
-    name: param.name,
-    displayName: `chord::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
-    data_type: param.data_type,
-    min_value: param.data_type === "bool" ? 0 : param.min_value,
-    max_value: param.data_type === "bool" ? 1 : param.max_value,
-    tooltip: param.tooltip
-  }))
-]
-  .filter(param => param.address >= 10 && param.address <= 219)
-  .sort((a, b) => a.address - b.address);
+// Function to compute validParameters from fetched JSON data
+const computeValidParameters = (parametersData) => {
+  if (!parametersData) return [];
+
+  return [
+    ...parametersData.global_parameter.map(param => ({
+      address: param.sysex_adress,
+      name: param.name,
+      displayName: `global::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
+      data_type: param.data_type,
+      min_value: param.data_type === "bool" ? 0 : param.min_value,
+      max_value: param.data_type === "bool" ? 1 : param.max_value,
+      tooltip: param.tooltip
+    })),
+    ...parametersData.harp_parameter.map(param => ({
+      address: param.sysex_adress,
+      name: param.name,
+      displayName: `harp::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
+      data_type: param.data_type,
+      min_value: param.data_type === "bool" ? 0 : param.min_value,
+      max_value: param.data_type === "bool" ? 1 : param.max_value,
+      tooltip: param.tooltip
+    })),
+    ...parametersData.chord_parameter.map(param => ({
+      address: param.sysex_adress,
+      name: param.name,
+      displayName: `chord::${param.name.replace(/\b\w/g, c => c.toUpperCase())}`,
+      data_type: param.data_type,
+      min_value: param.data_type === "bool" ? 0 : param.min_value,
+      max_value: param.data_type === "bool" ? 1 : param.max_value,
+      tooltip: param.tooltip
+    }))
+  ]
+    .filter(param => param.address >= 10 && param.address <= 219)
+    .sort((a, b) => a.address - b.address);
+};
 
 function PresetManager() {
   const [presetState, setPresetState] = useState({
@@ -46,6 +49,9 @@ function PresetManager() {
       values: new Array(256).fill(0),
     })),
   });
+  const [parametersData, setParametersData] = useState(null); // State for JSON data
+  const [isLoadingParameters, setIsLoadingParameters] = useState(true); // Loading state for JSON
+  const [error, setError] = useState(null); // Error state for JSON fetch
   const [selected, setSelected] = useState([]);
   const [controller, setController] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState({
@@ -57,7 +63,32 @@ function PresetManager() {
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [bulkEdits, setBulkEdits] = useState([{ address: null, value: null }]);
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light'); // Initialize theme from localStorage
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+
+  // Fetch parameters.json at runtime
+  useEffect(() => {
+    const fetchParameters = async () => {
+      try {
+        setIsLoadingParameters(true);
+        const response = await fetch('/parameters.json'); // Adjust path if needed
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        const data = await response.json();
+        setParametersData(data);
+        setIsLoadingParameters(false);
+      } catch (err) {
+        console.error("Error fetching parameters.json:", err);
+        setError("Failed to load parameters data");
+        setIsLoadingParameters(false);
+      }
+    };
+
+    fetchParameters();
+  }, []);
+
+  // Compute validParameters when parametersData changes
+  const validParameters = computeValidParameters(parametersData);
 
   // Effect to set theme on body and persist to localStorage
   useEffect(() => {
@@ -185,13 +216,6 @@ function PresetManager() {
         // Single preset: Use uploadPreset to target the specific preset
         const presetIndex = selected[0];
         const preset = newPresets[presetIndex];
-        /* const presetToUpload = {
-          value: btoa(preset.values.join(";")),
-          name: preset.title,
-          author: preset.author,
-          description: preset.note,
-        }; */
-
         (async () => {
           try {
             setIsLoadingPresets(true);
@@ -213,41 +237,40 @@ function PresetManager() {
             alert(`Error uploading preset: ${error.message}`);
           }
         })();
-          } else {
-            // Multiple or all presets: Use uploadAllPresets with selected indices
-            const presetsToUpload = newPresets
-              .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
-              .map((preset, index) => ({
-                value: btoa(preset.values.join(";")),
-                name: preset.title,
-                author: preset.author,
-                description: preset.note,
-              }));
+      } else {
+        // Multiple or all presets: Use uploadAllPresets with selected indices
+        const presetsToUpload = newPresets
+          .filter((_, index) => selected.length > 0 ? selected.includes(index) : true)
+          .map((preset, index) => ({
+            value: btoa(preset.values.join(";")),
+            name: preset.title,
+            author: preset.author,
+            description: preset.note,
+          }));
 
-            (async () => {
-              try {
-                setIsLoadingPresets(true);
-                // Pass both presetsToUpload and the target indices
-                const targetIndexes = selected.length > 0 ? selected : newPresets.map((_, i) => i);
-                const success = await controller.uploadAllPresets(presetsToUpload, targetIndexes);
-                setIsLoadingPresets(false);
-                setIsUploading(false);
-                if (success) {
-                  console.log(">> Bulk edit upload successful");
-                  showUploadSuccess("Bulk edit applied and uploaded successfully");
-                  setBulkEdits([{ address: null, value: null }]);
-                } else {
-                  console.error(">> Bulk edit upload failed");
-                  alert("Failed to upload presets: device not connected or invalid data");
-                }
-              } catch (error) {
-                setIsLoadingPresets(false);
-                setIsUploading(false);
-                console.error(`>> Error uploading presets: ${error.message}`);
-                alert(`Error uploading presets: ${error.message}`);
-              }
-            })();
+        (async () => {
+          try {
+            setIsLoadingPresets(true);
+            const targetIndexes = selected.length > 0 ? selected : newPresets.map((_, i) => i);
+            const success = await controller.uploadAllPresets(presetsToUpload, targetIndexes);
+            setIsLoadingPresets(false);
+            setIsUploading(false);
+            if (success) {
+              console.log(">> Bulk edit upload successful");
+              showUploadSuccess("Bulk edit applied and uploaded successfully");
+              setBulkEdits([{ address: null, value: null }]);
+            } else {
+              console.error(">> Bulk edit upload failed");
+              alert("Failed to upload presets: device not connected or invalid data");
+            }
+          } catch (error) {
+            setIsLoadingPresets(false);
+            setIsUploading(false);
+            console.error(`>> Error uploading presets: ${error.message}`);
+            alert(`Error uploading presets: ${error.message}`);
           }
+        })();
+      }
 
       return { presets: newPresets };
     });
@@ -396,7 +419,7 @@ function PresetManager() {
       author: preset.author,
       description: preset.note,
     }));
-    const targetIndexes = presetState.presets.map((_, index) => index); // All presets
+    const targetIndexes = presetState.presets.map((_, index) => index);
 
     console.log(">> Initiating preset order upload");
     try {
@@ -530,7 +553,6 @@ function PresetManager() {
           console.log(">> Calling uploadAllPresets with", validPresets.length, "valid presets");
           setIsUploading(true);
           setIsLoadingPresets(true);
-          // Create targetIndexes for all presets (0 to validPresets.length - 1)
           const targetIndexes = Array.from({ length: validPresets.length }, (_, i) => i);
           const success = await controller.uploadAllPresets(validPresets, targetIndexes);
           setIsLoadingPresets(false);
@@ -564,7 +586,6 @@ function PresetManager() {
   const handleSavePresets = async () => {
     console.log(">> Saving presets to JSON");
     try {
-      // Prepare JSON data
       const jsonData = {
         presets: presetState.presets.map(preset => ({
           name: preset.title,
@@ -575,9 +596,7 @@ function PresetManager() {
       };
       const jsonString = JSON.stringify(jsonData, null, 2);
 
-      // Check if showSaveFilePicker is supported
       if ('showSaveFilePicker' in window) {
-        // Prompt user for file location and name
         const fileHandle = await window.showSaveFilePicker({
           suggestedName: 'minichord_presets.json',
           types: [
@@ -588,12 +607,10 @@ function PresetManager() {
           ]
         });
 
-        // Create a writable stream and write the JSON data
         const writable = await fileHandle.createWritable();
         await writable.write(jsonString);
         await writable.close();
       } else {
-        // Fallback for browsers that don't support showSaveFilePicker
         const blob = new Blob([jsonString], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -650,7 +667,7 @@ function PresetManager() {
       const [draggedPreset] = newPresets.splice(draggedIndex, 1);
       newPresets.splice(index, 0, draggedPreset);
       newPresets.forEach((preset, i) => (preset.id = i));
-      console.log(`>> Reordered presets: ${newPresets.map(p => p.id + 1).join(',')}`); // Use 1-based in log
+      console.log(`>> Reordered presets: ${newPresets.map(p => p.id + 1).join(',')}`);
       return { presets: newPresets };
     });
 
@@ -665,10 +682,18 @@ function PresetManager() {
     });
   };
 
+  // Render loading or error states for parameters.json
+  if (isLoadingParameters) {
+    return <div>Loading parameters...</div>;
+  }
+
+  if (error) {
+    return <div>Error: {error}</div>;
+  }
+
   return (
     <div className="preset-manager">
       <h1>minichord preset manager</h1>
-      {/* Theme toggle switch */}
       <div className="theme-toggle">
         <input
           type="checkbox"
